@@ -79,6 +79,10 @@ function SkeletonCard() {
   )
 }
 
+let cachedData = null
+let cacheTime = null
+const CACHE_TTL = 60000
+
 const inputStyle = {
   border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)',
   padding: '7px 10px', background: 'var(--content-bg-card)', color: 'var(--ink)',
@@ -107,6 +111,7 @@ export default function AspirationsPage() {
   const [deletingMsId, setDeletingMsId] = useState(null)
   const [openTaskPanel, setOpenTaskPanel] = useState(null)
   const [taskSearch, setTaskSearch] = useState('')
+  const [taskPanelTasks, setTaskPanelTasks] = useState([])
   const [areasPanel, setAreasPanel] = useState(false)
   const [areaInput, setAreaInput] = useState('')
   const [renamingAreaId, setRenamingAreaId] = useState(null)
@@ -116,26 +121,39 @@ export default function AspirationsPage() {
   const aspFormRef = useRef(null)
   const msFormRef = useRef(null)
 
+  function applyData(d) { setAspirations(d.aspirations); setMilestones(d.milestones); setTasks(d.tasks); setPeople(d.people); setAreas(d.areas) }
+
   async function fetchAll() {
-    setLoading(true)
+    if (cachedData && cacheTime && Date.now() - cacheTime < CACHE_TTL) {
+      applyData(cachedData); setLoading(false); return
+    }
+    if (cachedData) { applyData(cachedData); setLoading(false) }
+    const showSkeleton = !cachedData
+    if (showSkeleton) setLoading(true)
     const [aR, mR, tR, pR, arR] = await Promise.all([
       supabase.from('aspirations').select('*').eq('user_id', user.id).order('created_at'),
       supabase.from('milestones').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, milestone_id').eq('user_id', user.id),
+      supabase.from('tasks').select('id, done, milestone_id').eq('user_id', user.id).not('milestone_id', 'is', null),
       supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
       supabase.from('areas').select('*').eq('user_id', user.id).order('name'),
     ])
-    setAspirations(aR.data || [])
-    setMilestones(mR.data || [])
-    setTasks(tR.data || [])
-    setPeople(pR.data || [])
-    setAreas(arR.data || [])
-    setLoading(false)
+    const fresh = { aspirations: aR.data || [], milestones: mR.data || [], tasks: tR.data || [], people: pR.data || [], areas: arR.data || [] }
+    cachedData = fresh; cacheTime = Date.now()
+    applyData(fresh); setLoading(false)
   }
 
+  function invalidateCache() { cachedData = null; cacheTime = null }
+
   async function refetchTasks() {
+    const { data } = await supabase.from('tasks').select('id, done, milestone_id').eq('user_id', user.id).not('milestone_id', 'is', null)
+    const t = data || []
+    setTasks(t)
+    if (cachedData) { cachedData = { ...cachedData, tasks: t }; cacheTime = Date.now() }
+  }
+
+  async function fetchTaskPanelTasks() {
     const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, milestone_id').eq('user_id', user.id)
-    setTasks(data || [])
+    setTaskPanelTasks(data || [])
   }
 
   useEffect(() => { fetchAll() }, [user.id])
@@ -212,12 +230,12 @@ export default function AspirationsPage() {
       : await supabase.from('aspirations').insert({ ...payload, user_id: user.id })
     if (error) showToast(error.message, 'error')
     else { showToast(aspForm.id ? 'Aspiration updated' : 'Aspiration added', 'success'); setAspForm(null); setFormError('') }
-    await fetchAll(); setSaving(false)
+    invalidateCache(); await fetchAll(); setSaving(false)
   }
   async function deleteAsp(id) {
     const { error } = await supabase.from('aspirations').delete().eq('id', id).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Aspiration deleted', 'success'); setDeletingAspId(null); await fetchAll() }
+    else { showToast('Aspiration deleted', 'success'); setDeletingAspId(null); invalidateCache(); await fetchAll() }
   }
 
   // ── Milestone CRUD ──
@@ -244,19 +262,19 @@ export default function AspirationsPage() {
   async function deleteMs(id) {
     const { error } = await supabase.from('milestones').delete().eq('id', id).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Milestone deleted', 'success'); setDeletingMsId(null); await fetchAll() }
+    else { showToast('Milestone deleted', 'success'); setDeletingMsId(null); invalidateCache(); await fetchAll() }
   }
 
   // ── Task linking ──
   async function linkTask(taskId, milestoneId) {
     const { error } = await supabase.from('tasks').update({ milestone_id: milestoneId }).eq('id', taskId).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Task linked', 'success'); await refetchTasks() }
+    else { showToast('Task linked', 'success'); invalidateCache(); await refetchTasks() }
   }
   async function unlinkTask(taskId) {
     const { error } = await supabase.from('tasks').update({ milestone_id: null }).eq('id', taskId).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Task unlinked', 'success'); await refetchTasks() }
+    else { showToast('Task unlinked', 'success'); invalidateCache(); await refetchTasks() }
   }
 
   function toggleAspCollapse(id) { setCollapsedAsps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
@@ -270,23 +288,23 @@ export default function AspirationsPage() {
     if (areas.some(a => a.name.toLowerCase() === name.toLowerCase())) { showToast('Area already exists', 'error'); return }
     const { error } = await supabase.from('areas').insert({ user_id: user.id, name })
     if (error) showToast(error.message, 'error')
-    else { showToast('Area added', 'success'); setAreaInput(''); await fetchAll() }
+    else { showToast('Area added', 'success'); setAreaInput(''); invalidateCache(); await fetchAll() }
   }
   async function renameArea(id, newName) {
     if (!newName.trim()) return
     const { error } = await supabase.from('areas').update({ name: newName.trim() }).eq('id', id).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Area renamed', 'success'); setRenamingAreaId(null); await fetchAll() }
+    else { showToast('Area renamed', 'success'); setRenamingAreaId(null); invalidateCache(); await fetchAll() }
   }
   async function deleteArea(id) {
     const { error } = await supabase.from('areas').delete().eq('id', id).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Area deleted', 'success'); await fetchAll() }
+    else { showToast('Area deleted', 'success'); invalidateCache(); await fetchAll() }
   }
   async function reassignArea(aspirationId, areaId) {
     const { error } = await supabase.from('aspirations').update({ area_id: areaId }).eq('id', aspirationId).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Area updated', 'success'); setAreaDropdownAspId(null); await fetchAll() }
+    else { showToast('Area updated', 'success'); setAreaDropdownAspId(null); invalidateCache(); await fetchAll() }
   }
 
   // ── Grouped aspirations ──
@@ -298,6 +316,17 @@ export default function AspirationsPage() {
     const groups = sorted.filter(a => byArea[a.id]?.length).map(a => ({ area: a, asps: byArea[a.id] }))
     return { groups, ungrouped }
   }, [aspirations, areas])
+
+  const msIndex = useMemo(() => {
+    const byParent = {}
+    const hasChild = new Set()
+    milestones.forEach(m => {
+      const key = `${m.aspiration_id}|${m.parent_milestone_id || ''}|${m.horizon}`
+      ;(byParent[key] ||= []).push(m)
+      if (m.parent_milestone_id) hasChild.add(m.parent_milestone_id)
+    })
+    return { byParent, hasChild }
+  }, [milestones])
 
 
   // ── Milestone form UI ──
@@ -345,8 +374,8 @@ export default function AspirationsPage() {
   }
 
   function renderTaskPanel(m) {
-    const linked = tasks.filter(t => t.milestone_id === m.id)
-    const available = tasks.filter(t => !t.done && (!t.milestone_id || t.milestone_id === m.id))
+    const linked = taskPanelTasks.filter(t => t.milestone_id === m.id)
+    const available = taskPanelTasks.filter(t => !t.done && (!t.milestone_id || t.milestone_id === m.id))
     const unlinked = available.filter(t => t.milestone_id !== m.id)
     const filtered = taskSearch
       ? unlinked.filter(t => t.task?.toLowerCase().includes(taskSearch.toLowerCase()))
@@ -409,11 +438,8 @@ export default function AspirationsPage() {
 
   // ── Milestone tree ──
   function renderTree(aspirationId, parentId, horizon) {
-    const items = milestones.filter(m =>
-      m.aspiration_id === aspirationId &&
-      (parentId ? m.parent_milestone_id === parentId : !m.parent_milestone_id) &&
-      m.horizon === horizon
-    )
+    const key = `${aspirationId}|${parentId || ''}|${horizon}`
+    const items = msIndex.byParent[key] || []
     const nextH = CHILD_H[horizon]
     const isNested = parentId !== null
     const showAddHere = msForm && !msForm.id && msForm.aspirationId === aspirationId &&
@@ -425,7 +451,7 @@ export default function AspirationsPage() {
     const content = (
       <>
         {items.map(m => {
-          const hasKids = nextH && milestones.some(c => c.parent_milestone_id === m.id && c.horizon === nextH)
+          const hasKids = nextH && msIndex.hasChild.has(m.id)
           const isExp = expandedMs.has(m.id)
           const isEditing = msForm?.id === m.id
           const hasAddChild = msForm && !msForm.id && msForm.parentMilestoneId === m.id
@@ -465,7 +491,7 @@ export default function AspirationsPage() {
                       <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 10, background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>{badge.label}</span>
                     )}
 
-                    <span title={m.text} onClick={m.horizon === 'Weekly' ? () => { setOpenTaskPanel(p => p === m.id ? null : m.id); setTaskSearch('') } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default' }}>{m.text}</span>
+                    <span title={m.text} onClick={m.horizon === 'Weekly' ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default' }}>{m.text}</span>
 
                     {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: overdue ? 'var(--danger)' : 'var(--ink-faint)', minWidth: 58, textAlign: 'right', flexShrink: 0 }}>{due}</span>}
 
