@@ -6,6 +6,7 @@ import ThisWeekPage     from './pages/ThisWeekPage'
 import ReflectionLogPage from './pages/ReflectionLogPage'
 import DashboardPage    from './pages/DashboardPage'
 import PeoplePage       from './pages/PeoplePage'
+import AspirationsPage  from './pages/AspirationsPage'
 
 export function buildRouter(user) {
   return createBrowserRouter([
@@ -14,12 +15,13 @@ export function buildRouter(user) {
       element: <Shell user={user} />,
       children: [
         { index: true, element: <Navigate to="/capture" replace /> },
-        { path: 'capture',        element: <CapturePage /> },
-        { path: 'this-week',      element: <ThisWeekPage /> },
-        { path: 'reflection-log', element: <ReflectionLogPage /> },
-        { path: 'dashboard',      element: <DashboardPage /> },
+        { path: 'capture',          element: <CapturePage /> },
+        { path: 'this-week',        element: <ThisWeekPage /> },
+        { path: 'aspirations',      element: <AspirationsPage /> },
+        { path: 'reflection-log',   element: <ReflectionLogPage /> },
+        { path: 'dashboard',        element: <DashboardPage /> },
         { path: 'strategic/people', element: <PeoplePage /> },
-        { path: '*',              element: <ComingSoon /> },
+        { path: '*',                element: <ComingSoon /> },
       ],
     },
   ])

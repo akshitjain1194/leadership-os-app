@@ -132,6 +132,11 @@ body {
 .idea-card .idea-actions { opacity: 0; transition: opacity 150ms ease; }
 .idea-card:hover .idea-actions { opacity: 1; }
 
+/* ── Milestone row hover-reveal ── */
+.ms-row .ms-actions { opacity: 0; transition: opacity 150ms ease; }
+.ms-row:hover .ms-actions { opacity: 1; }
+.ms-row:hover { background: rgba(0,0,0,0.03); }
+
 /* ── Animations ── */
 @keyframes captureSlide {
   from { opacity: 0; transform: translateY(-6px); }
