@@ -113,11 +113,8 @@ export default function AspirationsPage() {
   const [renamingText, setRenamingText] = useState('')
   const [collapsedAreas, setCollapsedAreas] = useState(new Set())
   const [areaDropdownAspId, setAreaDropdownAspId] = useState(null)
-  const [activeAreaPill, setActiveAreaPill] = useState(null)
-
   const aspFormRef = useRef(null)
   const msFormRef = useRef(null)
-  const sectionRefs = useRef({})
 
   async function fetchAll() {
     setLoading(true)
@@ -302,15 +299,6 @@ export default function AspirationsPage() {
     return { groups, ungrouped }
   }, [aspirations, areas])
 
-  // IntersectionObserver for area pills
-  useEffect(() => {
-    if (loading || !aspirations.length) return
-    const observer = new IntersectionObserver(entries => {
-      entries.forEach(entry => { if (entry.isIntersecting) setActiveAreaPill(entry.target.dataset.areaId || null) })
-    }, { rootMargin: '-80px 0px -60% 0px' })
-    Object.values(sectionRefs.current).forEach(el => { if (el) observer.observe(el) })
-    return () => observer.disconnect()
-  }, [loading, aspirations.length, areas.length])
 
   // ── Milestone form UI ──
   function renderMsForm() {
@@ -610,8 +598,7 @@ export default function AspirationsPage() {
     const isCollapsed = collapsedAreas.has(areaId)
     return (
       <div key={areaId}>
-        <div ref={el => (sectionRefs.current[areaId] = el)} data-area-id={areaId}
-          className="flex items-center gap-2" style={{ marginTop: idx > 0 ? 24 : 0, marginBottom: 12 }}>
+        <div className="flex items-center gap-2" style={{ marginTop: idx > 0 ? 24 : 0, marginBottom: 12 }}>
           {color && <span style={{ width: 12, height: 12, borderRadius: 3, background: color, flexShrink: 0 }} />}
           <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: color ? 'var(--ink)' : 'var(--ink-faint)', fontStyle: color ? 'normal' : 'italic' }}>{label}</span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>({asps.length})</span>
@@ -642,15 +629,15 @@ export default function AspirationsPage() {
         </div>
       </div>
 
-      {/* Area nav pills */}
+      {/* Area filter pills */}
       {areas.length > 0 && (
         <div className="flex gap-2" style={{ overflowX: 'auto', paddingBottom: 4, flexWrap: 'nowrap' }}>
-          <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: !activeAreaPill ? 500 : 400, background: !activeAreaPill ? 'var(--accent-coral)' : 'transparent', color: !activeAreaPill ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${!activeAreaPill ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>All</button>
+          <button onClick={() => setAreaFilter(null)} style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: !areaFilter ? 500 : 400, background: !areaFilter ? 'var(--accent-coral)' : 'transparent', color: !areaFilter ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${!areaFilter ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>All</button>
           {areas.map(a => {
             const ac = getAreaColor(a.name)
-            const active = activeAreaPill === a.id
+            const active = areaFilter === a.id
             return (
-              <button key={a.id} onClick={() => sectionRefs.current[a.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              <button key={a.id} onClick={() => setAreaFilter(a.id)}
                 style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: active ? 500 : 400, background: active ? ac : 'transparent', color: active ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${active ? ac : 'var(--content-border)'}`, borderLeft: active ? undefined : `3px solid ${ac}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>{a.name}</button>
             )
           })}
@@ -748,8 +735,10 @@ export default function AspirationsPage() {
       {/* Grouped aspiration cards */}
       {!loading && aspirations.length > 0 && (
         <div>
-          {areaGroups.groups.map(({ area, asps }, idx) => renderAreaSection(area.id, area.name, getAreaColor(area.name), asps, idx))}
-          {areaGroups.ungrouped.length > 0 && renderAreaSection('ungrouped', 'No area assigned', null, areaGroups.ungrouped, areaGroups.groups.length)}
+          {areaGroups.groups
+            .filter(({ area }) => !areaFilter || area.id === areaFilter)
+            .map(({ area, asps }, idx) => renderAreaSection(area.id, area.name, getAreaColor(area.name), asps, idx))}
+          {!areaFilter && areaGroups.ungrouped.length > 0 && renderAreaSection('ungrouped', 'No area assigned', null, areaGroups.ungrouped, areaGroups.groups.length)}
         </div>
       )}
     </div>
