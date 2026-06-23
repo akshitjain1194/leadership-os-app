@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { getOwnerName } from '../lib/taskUtils'
 import { getAreaColor } from '../lib/areaUtils'
 import { showToast } from '../components/Toast'
-import { Check, ChevronDown, ChevronRight, CalendarCheck, User, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, CalendarCheck, User, X, Plus } from 'lucide-react'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -56,9 +56,13 @@ function formatMsDue(dateStr) {
 
 function formatTaskDue(dateStr) {
   if (!dateStr) return null
+  const today = todayDateStr()
+  if (dateStr === today) return { text: 'Today', color: 'var(--accent-gold)', bold: true }
   const d = new Date(dateStr + 'T00:00:00')
   const t = new Date(); t.setHours(0, 0, 0, 0)
-  return { text: `${MONTHS[d.getMonth()]} ${d.getDate()}`, color: d < t ? 'var(--danger)' : 'var(--ink-faint)' }
+  const label = `${MONTHS[d.getMonth()]} ${d.getDate()}`
+  if (d < t) return { text: label, color: 'var(--danger)', bold: true }
+  return { text: label, color: 'var(--ink-faint)', bold: false }
 }
 
 function sortMilestones(list) {
@@ -105,7 +109,7 @@ export default function WeeklyFocusPage() {
   const [dateFilter, setDateFilter] = useState('all')
   const [anchorFilter, setAnchorFilter] = useState(null)
   const [areaFilter, setAreaFilter] = useState(null)
-  const [expandedCards, setExpandedCards] = useState(new Set())
+  const [collapsedCards, setCollapsedCards] = useState(new Set())
   const [linkPickerMsId, setLinkPickerMsId] = useState(null)
   const [linkSearch, setLinkSearch] = useState('')
 
@@ -157,7 +161,7 @@ export default function WeeklyFocusPage() {
     else { showToast('Task linked', 'success'); setLinkPickerMsId(null); setLinkSearch(''); await refetchTasks() }
   }
 
-  function toggleCard(id) { setExpandedCards(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleCard(id) { setCollapsedCards(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
 
   function getBreadcrumb(ms) {
     const aspText = ms.aspirations?.text
@@ -295,7 +299,7 @@ export default function WeeklyFocusPage() {
 
       {/* Milestone cards */}
       {!loading && sorted.length > 0 && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col" style={{ gap: 10 }}>
           {sorted.map(ms => {
             const prog = getProgress(ms.id)
             const due = formatMsDue(ms.due_date)
@@ -304,7 +308,7 @@ export default function WeeklyFocusPage() {
             const sb = STATUS_BADGE[ms.status] || STATUS_BADGE.Active
             const borderCol = STATUS_BORDER[ms.status] || STATUS_BORDER.Active
             const breadcrumb = getBreadcrumb(ms)
-            const isExpanded = expandedCards.has(ms.id)
+            const isExpanded = !collapsedCards.has(ms.id)
             const linkedTasks = tasks.filter(t => t.milestone_id === ms.id)
             const isDone = ms.status === 'Done'
             const isAtRisk = ms.status === 'At Risk'
@@ -318,67 +322,68 @@ export default function WeeklyFocusPage() {
             return (
               <div key={ms.id} style={{ background: cardBg, border: '1px solid var(--content-border)', borderLeft: `3px solid ${borderCol}`, borderRadius: 'var(--radius-lg)', overflow: 'hidden', opacity: isDone ? 0.6 : 1, transition: 'opacity 150ms ease' }}>
                 {/* Header */}
-                <div className="flex gap-3" style={{ padding: '14px 18px', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {breadcrumb && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{breadcrumb}</div>}
-                    <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4 }}>{ms.text}</div>
+                <div style={{ padding: '12px 16px' }}>
+                  {/* Row 1: breadcrumb · due · status */}
+                  <div className="flex items-center gap-1.5 flex-wrap" style={{ marginBottom: 3 }}>
+                    {breadcrumb && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>{breadcrumb}</span>}
+                    {breadcrumb && due && <span style={{ fontSize: '10px', color: 'var(--content-border-strong)' }}>·</span>}
+                    {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: due.color, fontWeight: due.bold ? 600 : 400 }}>{due.text}</span>}
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 6px', borderRadius: 10, background: sb.bg, color: sb.color }}>{ms.status}</span>
                   </div>
-                  <div className="flex flex-col items-end gap-1.5" style={{ flexShrink: 0 }}>
-                    {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: due.color, fontWeight: due.bold ? 500 : 400 }}>{due.text}</span>}
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '1px 7px', borderRadius: 10, background: sb.bg, color: sb.color }}>{ms.status}</span>
-                    {anchor && (
-                      <div className="flex items-center gap-1.5">
-                        <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>
-                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--ink-faint)' }}>{anchor.name}</span>
-                      </div>
-                    )}
-                    {linkedTasks.length > 0 ? (
+                  {/* Row 2: milestone text + right group */}
+                  <div className="flex items-center gap-3">
+                    <div style={{ flex: 1, fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: 'var(--ink)', lineHeight: 1.4, minWidth: 0 }}>{ms.text}</div>
+                    <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                      {anchor && (
+                        <div title={anchor.name} style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>
+                      )}
+                      {prog.hasTasks && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: prog.pct > 50 ? 'var(--accent-green)' : 'var(--ink-faint)', fontWeight: 500 }}>{prog.pct}%</span>}
                       <button onClick={() => toggleCard(ms.id)} className="flex items-center gap-1" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>
                         {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                        {linkedTasks.length} task{linkedTasks.length !== 1 ? 's' : ''}
+                        {linkedTasks.length > 0 ? `${linkedTasks.length} task${linkedTasks.length !== 1 ? 's' : ''}` : 'No tasks'}
                       </button>
-                    ) : (
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>No tasks</span>
-                    )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Progress */}
-                <div style={{ padding: '0 18px 10px' }}>
-                  {prog.hasTasks ? (
-                    <>
-                      <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)' }}>Progress</span>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)' }}>{prog.pct}%</span>
-                      </div>
-                      <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'var(--content-border)', overflow: 'hidden' }}>
-                        <div style={{ width: `${prog.pct}%`, height: '100%', background: progFill, borderRadius: 2, transition: 'width 400ms ease' }} />
-                      </div>
-                    </>
-                  ) : (
-                    <p style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No tasks linked — link tasks to track progress</p>
-                  )}
-                </div>
+                {/* Progress bar — slim, no label */}
+                {prog.hasTasks && (
+                  <div style={{ margin: '0 16px 4px', height: 3, borderRadius: 2, background: 'var(--content-border)', overflow: 'hidden' }}>
+                    <div style={{ width: `${prog.pct}%`, height: '100%', background: progFill, borderRadius: 2, transition: 'width 400ms ease' }} />
+                  </div>
+                )}
+                {!prog.hasTasks && !isExpanded && (
+                  <div style={{ padding: '0 16px 8px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No tasks linked</span>
+                  </div>
+                )}
 
-                {/* Expanded tasks */}
+                {/* Tasks (expanded by default) */}
                 {isExpanded && (
-                  <div style={{ borderTop: '1px solid var(--content-border)', padding: '8px 0' }}>
+                  <div style={{ borderTop: '1px solid var(--content-border)', padding: '6px 0' }}>
+                    {linkedTasks.length === 0 && (
+                      <div style={{ padding: '8px 16px' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No tasks linked</span>
+                      </div>
+                    )}
                     {linkedTasks.map((t, idx) => {
                       const td = formatTaskDue(t.due_date)
                       const qb = QUAD_BADGE[t.quadrant]
+                      const ownerName = getOwnerName(t, people)
                       return (
                         <div key={t.id}
-                          style={{ display: 'flex', alignItems: 'center', padding: '8px 18px', gap: 10, transition: 'background 150ms', borderBottom: idx < linkedTasks.length - 1 ? '1px solid rgba(232,227,218,0.4)' : 'none' }}
+                          style={{ display: 'flex', alignItems: 'center', padding: '7px 16px', gap: 10, transition: 'background 150ms', borderBottom: idx < linkedTasks.length - 1 ? '1px solid rgba(232,227,218,0.3)' : 'none' }}
                           onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
                           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                           <button onClick={() => toggleTaskDone(t)}
-                            style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${t.done ? 'var(--accent-green)' : 'var(--content-border-strong)'}`, background: t.done ? 'var(--accent-green)' : 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-                            {t.done && <Check size={9} color="white" strokeWidth={3} />}
+                            style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${t.done ? 'var(--accent-green)' : 'var(--content-border-strong)'}`, background: t.done ? 'var(--accent-green)' : 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                            {t.done && <Check size={10} color="white" strokeWidth={3} />}
                           </button>
-                          <span style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', lineHeight: 1.4, color: t.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: t.done ? 'line-through' : 'none' }}>{t.task}</span>
-                          {td && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: td.color, flexShrink: 0 }}>{td.text}</span>}
-                          {(() => { const on = getOwnerName(t, people); return on && anchor && on !== anchor.name ? (
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 8px', borderRadius: 20, background: 'var(--content-bg)', border: '1px solid var(--content-border)', color: 'var(--ink-soft)', flexShrink: 0 }}>{on}</span>) : null })()}
+                          <span style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', fontWeight: 500, lineHeight: 1.4, color: t.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: t.done ? 'line-through' : 'none' }}>{t.task}</span>
+                          {td && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: td.color, fontWeight: td.bold ? 500 : 400, flexShrink: 0 }}>{td.text}</span>}
+                          {ownerName && (
+                            <div title={ownerName} style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(ownerName)}</div>
+                          )}
                           {t.quadrant && qb && (
                             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 5px', borderRadius: 8, background: qb.bg, color: qb.color, flexShrink: 0, whiteSpace: 'nowrap' }}>{t.quadrant}</span>
                           )}
@@ -386,36 +391,38 @@ export default function WeeklyFocusPage() {
                       )
                     })}
 
-                    {/* Link task picker */}
+                    {/* Link task */}
                     {linkPickerMsId === ms.id ? (
-                      <div ref={linkPickerRef} style={{ padding: '8px 18px' }}>
+                      <div ref={linkPickerRef} style={{ padding: '6px 16px' }}>
                         <input autoFocus value={linkSearch} onChange={e => setLinkSearch(e.target.value)} placeholder="Search tasks to link…" className="w-full outline-none"
-                          style={{ border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: '12px', fontFamily: 'var(--font-sans)', background: 'var(--content-bg-card)', color: 'var(--ink)', marginBottom: 4 }} />
+                          style={{ border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: '12px', fontFamily: 'var(--font-sans)', background: 'var(--content-bg-card)', color: 'var(--ink)', marginBottom: 4 }} />
                         <div style={{ maxHeight: 150, overflowY: 'auto' }}>
                           {(() => {
                             const avail = tasks.filter(t => !t.milestone_id && !t.done)
                             const show = linkSearch ? avail.filter(t => t.task?.toLowerCase().includes(linkSearch.toLowerCase())) : avail
-                            if (!show.length) return <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 0' }}>{linkSearch ? 'No matching tasks' : 'No unlinked tasks available'}</p>
+                            if (!show.length) return <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '4px 0' }}>{linkSearch ? 'No matching tasks' : 'No unlinked tasks available'}</p>
                             return show.slice(0, 15).map(t => {
-                              const qb = QUAD_BADGE[t.quadrant]
+                              const qb2 = QUAD_BADGE[t.quadrant]
                               return (
                                 <div key={t.id} onClick={() => linkTask(t.id, ms.id)} className="flex items-center gap-2"
-                                  style={{ padding: '5px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }}
+                                  style={{ padding: '4px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }}
                                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
                                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                                   <span style={{ flex: 1, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.task}</span>
-                                  {t.quadrant && qb && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: qb.bg, color: qb.color, flexShrink: 0 }}>{t.quadrant}</span>}
-                                  {t.due_date && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', flexShrink: 0 }}>{`${MONTHS[new Date(t.due_date + 'T00:00:00').getMonth()]} ${new Date(t.due_date + 'T00:00:00').getDate()}`}</span>}
+                                  {t.quadrant && qb2 && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: qb2.bg, color: qb2.color, flexShrink: 0 }}>{t.quadrant}</span>}
                                 </div>
                               )
                             })
                           })()}
                         </div>
-                        <button onClick={() => { setLinkPickerMsId(null); setLinkSearch('') }} style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--ink-faint)', fontFamily: 'var(--font-sans)', padding: 0 }}>Cancel</button>
+                        <button onClick={() => { setLinkPickerMsId(null); setLinkSearch('') }} style={{ marginTop: 2, background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--ink-faint)', fontFamily: 'var(--font-sans)', padding: 0 }}>Cancel</button>
                       </div>
                     ) : (
-                      <div style={{ padding: '4px 18px 6px' }}>
-                        <button onClick={() => { setLinkPickerMsId(ms.id); setLinkSearch('') }} style={{ background: 'none', border: '1px dashed var(--content-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: '5px 12px', fontSize: '12px', color: 'var(--ink-faint)', fontFamily: 'var(--font-sans)' }}>+ Link an existing task</button>
+                      <div className="flex justify-end" style={{ padding: '2px 16px 4px' }}>
+                        <button onClick={() => { setLinkPickerMsId(ms.id); setLinkSearch('') }} className="flex items-center gap-1"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--ink-faint)', fontFamily: 'var(--font-sans)', padding: '2px 0' }}>
+                          <Plus size={12} /> Link task
+                        </button>
                       </div>
                     )}
                   </div>
