@@ -7,7 +7,6 @@ import EmptyState from '../components/EmptyState'
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
-const OWNERS = ['Akshit', 'Sabita', 'Varun P', 'Varun S', 'Anagha', 'Rajesh', 'Sanjay', 'Others']
 const QUADRANT_KEYS = ['Do Now', 'Do Soon', 'Schedule', 'Delegated', 'Awaited']
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -26,9 +25,9 @@ function classifyTask(owner, dueDate) {
 
 // ── IdeaCard ──────────────────────────────────────────────────────────────────
 
-function IdeaCard({ idea, onConvert, onRelease }) {
+function IdeaCard({ idea, people, peopleLoading, onConvert, onRelease }) {
   const [converting, setConverting] = useState(false)
-  const [convOwner, setConvOwner]   = useState('Akshit')
+  const [convOwner, setConvOwner]   = useState('')
   const [convDate, setConvDate]     = useState(format(new Date(), 'yyyy-MM-dd'))
 
   const ageDays = Math.floor((Date.now() - new Date(idea.created_at).getTime()) / 86400000)
@@ -68,10 +67,20 @@ function IdeaCard({ idea, onConvert, onRelease }) {
           <select
             value={convOwner}
             onChange={e => setConvOwner(e.target.value)}
+            disabled={peopleLoading || people.length === 0}
             className="w-full"
-            style={{ border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', background: 'var(--content-bg)', color: 'var(--ink)', fontFamily: 'var(--font-sans)', fontSize: '13px' }}
+            style={{ border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', background: 'var(--content-bg)', color: convOwner ? 'var(--ink)' : 'var(--ink-faint)', fontFamily: 'var(--font-sans)', fontSize: '13px' }}
           >
-            {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
+            {peopleLoading ? (
+              <option value="">Loading…</option>
+            ) : people.length === 0 ? (
+              <option value="" disabled>Add people first</option>
+            ) : (
+              <>
+                <option value="">Owner (optional)</option>
+                {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </>
+            )}
           </select>
           <input
             type="date"
@@ -148,12 +157,26 @@ export default function CapturePage() {
   const [ideasError,   setIdeasError]   = useState(null)
   const [taskCounts,  setTaskCounts]  = useState({})
 
+  const [people,        setPeople]        = useState([])
+  const [peopleLoading, setPeopleLoading] = useState(true)
+
   const [ideaFilter, setIdeaFilter] = useState('all')
   const [search,     setSearch]     = useState('')
 
   const textareaRef = useRef()
 
-  useEffect(() => { loadIdeas(); loadTaskCounts() }, [user.id])
+  useEffect(() => { loadIdeas(); loadTaskCounts(); loadPeople() }, [user.id])
+
+  async function loadPeople() {
+    setPeopleLoading(true)
+    const { data } = await supabase
+      .from('people')
+      .select('id, name')
+      .eq('user_id', user.id)
+      .order('name')
+    setPeople(data || [])
+    setPeopleLoading(false)
+  }
 
   async function loadIdeas() {
     setIdeasLoading(true); setIdeasError(null)
@@ -278,8 +301,16 @@ export default function CapturePage() {
             className="flex-1"
             style={{ minWidth: '130px', border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', background: 'var(--content-bg-card)', color: owner ? 'var(--ink)' : 'var(--ink-faint)', fontFamily: 'var(--font-sans)', fontSize: '13px' }}
           >
-            <option value="">— No owner (idea) —</option>
-            {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
+            {peopleLoading ? (
+              <option value="">Loading…</option>
+            ) : people.length === 0 ? (
+              <option value="" disabled>Add people first</option>
+            ) : (
+              <>
+                <option value="">Owner (optional)</option>
+                {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </>
+            )}
           </select>
 
           <input
@@ -401,7 +432,7 @@ export default function CapturePage() {
         {!ideasLoading && !ideasError && filteredIdeas.length > 0 && (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
             {filteredIdeas.map(i => (
-              <IdeaCard key={i.id} idea={i} onConvert={handleConvert} onRelease={handleRelease} />
+              <IdeaCard key={i.id} idea={i} people={people} peopleLoading={peopleLoading} onConvert={handleConvert} onRelease={handleRelease} />
             ))}
           </div>
         )}
