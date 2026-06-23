@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { showToast } from '../components/Toast'
 import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X } from 'lucide-react'
 
-const AREA_COLORS = ['var(--accent-green)', 'var(--accent-coral)', 'var(--accent-purple)', 'var(--accent-gold)', '#185fa5', '#2d9596']
+const AREA_COLORS = ['#2d6a4f', '#e07a5f', '#7b5ea7', '#c8982a', '#185fa5', '#2d9596', '#dc2626', '#d97706']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CHILD_H = { Annual: 'SixMonth', SixMonth: 'Monthly', Monthly: 'Weekly' }
 const HORIZON_BADGE = {
@@ -22,9 +22,9 @@ const PLACEHOLDER = {
 }
 
 function areaColor(name) {
-  if (!name) return 'var(--accent-green)'
+  if (!name) return '#9898b8'
   let h = 0
-  for (let i = 0; i < name.length; i++) h = ((h << 5) - h) + name.charCodeAt(i)
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h)
   return AREA_COLORS[Math.abs(h) % AREA_COLORS.length]
 }
 
@@ -115,9 +115,17 @@ export default function AspirationsPage() {
   const [deletingMsId, setDeletingMsId] = useState(null)
   const [openTaskPanel, setOpenTaskPanel] = useState(null)
   const [taskSearch, setTaskSearch] = useState('')
+  const [areasPanel, setAreasPanel] = useState(false)
+  const [areaInput, setAreaInput] = useState('')
+  const [renamingAreaId, setRenamingAreaId] = useState(null)
+  const [renamingText, setRenamingText] = useState('')
+  const [collapsedAreas, setCollapsedAreas] = useState(new Set())
+  const [areaDropdownAspId, setAreaDropdownAspId] = useState(null)
+  const [activeAreaPill, setActiveAreaPill] = useState(null)
 
   const aspFormRef = useRef(null)
   const msFormRef = useRef(null)
+  const sectionRefs = useRef({})
 
   async function fetchAll() {
     setLoading(true)
@@ -147,7 +155,7 @@ export default function AspirationsPage() {
   useEffect(() => {
     if (!aspForm && !msForm && !openTaskPanel) return
     function onKey(e) {
-      if (e.key === 'Escape') { setAspForm(null); setMsForm(null); setFormError(''); setOpenTaskPanel(null); setTaskSearch('') }
+      if (e.key === 'Escape') { setAspForm(null); setMsForm(null); setFormError(''); setOpenTaskPanel(null); setTaskSearch(''); setAreasPanel(false); setAreaDropdownAspId(null) }
     }
     function onMouse(e) {
       if (aspForm && aspFormRef.current && !aspFormRef.current.contains(e.target)) { setAspForm(null); setFormError('') }
@@ -264,8 +272,53 @@ export default function AspirationsPage() {
 
   function toggleAspCollapse(id) { setCollapsedAsps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleMsExpand(id) { setExpandedMs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleAreaCollapse(id) { setCollapsedAreas(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
 
-  const filtered = areaFilter ? aspirations.filter(a => a.area_id === areaFilter) : aspirations
+  // ── Area CRUD ──
+  async function addArea() {
+    const name = areaInput.trim()
+    if (!name) return
+    if (areas.some(a => a.name.toLowerCase() === name.toLowerCase())) { showToast('Area already exists', 'error'); return }
+    const { error } = await supabase.from('areas').insert({ user_id: user.id, name })
+    if (error) showToast(error.message, 'error')
+    else { showToast('Area added', 'success'); setAreaInput(''); await fetchAll() }
+  }
+  async function renameArea(id, newName) {
+    if (!newName.trim()) return
+    const { error } = await supabase.from('areas').update({ name: newName.trim() }).eq('id', id).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Area renamed', 'success'); setRenamingAreaId(null); await fetchAll() }
+  }
+  async function deleteArea(id) {
+    const { error } = await supabase.from('areas').delete().eq('id', id).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Area deleted', 'success'); await fetchAll() }
+  }
+  async function reassignArea(aspirationId, areaId) {
+    const { error } = await supabase.from('aspirations').update({ area_id: areaId }).eq('id', aspirationId).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Area updated', 'success'); setAreaDropdownAspId(null); await fetchAll() }
+  }
+
+  // ── Grouped aspirations ──
+  const areaGroups = useMemo(() => {
+    const byArea = {}
+    const ungrouped = []
+    aspirations.forEach(a => { if (a.area_id) { (byArea[a.area_id] ||= []).push(a) } else ungrouped.push(a) })
+    const sorted = [...areas].sort((a, b) => a.name.localeCompare(b.name))
+    const groups = sorted.filter(a => byArea[a.id]?.length).map(a => ({ area: a, asps: byArea[a.id] }))
+    return { groups, ungrouped }
+  }, [aspirations, areas])
+
+  // IntersectionObserver for area pills
+  useEffect(() => {
+    if (loading || !aspirations.length) return
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => { if (entry.isIntersecting) setActiveAreaPill(entry.target.dataset.areaId || null) })
+    }, { rootMargin: '-80px 0px -60% 0px' })
+    Object.values(sectionRefs.current).forEach(el => { if (el) observer.observe(el) })
+    return () => observer.disconnect()
+  }, [loading, aspirations.length, areas.length])
 
   // ── Milestone form UI ──
   function renderMsForm() {
@@ -476,6 +529,110 @@ export default function AspirationsPage() {
       : content
   }
 
+  // ── Render aspiration card ──
+  function renderCard(a) {
+    const areaObj = areas.find(ar => ar.id === a.area_id)
+    const aName = areaObj?.name || null
+    const borderCol = areaColor(aName)
+    const prog = Math.round(progressMap['a-' + a.id] || 0)
+    const hasAnn = milestones.some(m => m.aspiration_id === a.id && m.horizon === 'Annual')
+    const showProg = prog > 0 || hasAnn
+    const isCollapsed = collapsedAsps.has(a.id)
+    const dateRange = a.start_date && a.end_date ? (() => {
+      const s = new Date(a.start_date + 'T00:00:00'), e = new Date(a.end_date + 'T00:00:00')
+      return `${MONTHS[s.getMonth()]} ${s.getFullYear()} → ${MONTHS[e.getMonth()]} ${e.getFullYear()} · ${a.horizon_years} year${a.horizon_years !== 1 ? 's' : ''}`
+    })() : null
+
+    return (
+      <div key={a.id} style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', borderLeft: `3px solid ${borderCol}` }}>
+        {deletingAspId === a.id ? (
+          <div className="flex flex-col gap-3">
+            <p style={{ fontSize: '14px', color: 'var(--ink-soft)', lineHeight: 1.5 }}>Delete this aspiration and all milestones beneath it? This cannot be undone.</p>
+            <div className="flex gap-2">
+              <button onClick={() => deleteAsp(a.id)} style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--danger)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Delete</button>
+              <button onClick={() => setDeletingAspId(null)} style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px' }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-3">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Clickable area tag */}
+                <div style={{ position: 'relative', marginBottom: 4, display: 'inline-block' }}>
+                  <div onClick={() => setAreaDropdownAspId(areaDropdownAspId === a.id ? null : a.id)} style={{ cursor: 'pointer' }} className="flex items-center gap-2">
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: borderCol, flexShrink: 0 }} />
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)' }}>{aName || 'Assign area'} ▾</span>
+                  </div>
+                  {areaDropdownAspId === a.id && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', marginTop: 4, minWidth: 160, padding: '4px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                      <div onClick={() => reassignArea(a.id, null)} style={{ padding: '5px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--ink-faint)', transition: 'background 100ms' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>No area</div>
+                      {areas.map(ar => (
+                        <div key={ar.id} onClick={() => reassignArea(a.id, ar.id)} className="flex items-center gap-2"
+                          style={{ padding: '5px 10px', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                          <span style={{ width: 10, height: 10, borderRadius: 3, background: areaColor(ar.name), flexShrink: 0 }} />
+                          <span style={{ color: 'var(--ink)' }}>{ar.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontFamily: 'var(--font-serif)', fontSize: '16px', color: 'var(--ink)', lineHeight: 1.4 }}>{a.text}</div>
+                {dateRange && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', marginTop: 4 }}>{dateRange}</div>}
+              </div>
+              <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
+                {showProg && <span style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 700, color: prog > 0 ? 'var(--accent-green)' : 'var(--ink-faint)' }}>{prog}%</span>}
+                {showProg && <ProgressRing progress={prog} />}
+                <button onClick={() => openEditAsp(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}><Pencil size={15} /></button>
+                <button onClick={() => setDeletingAspId(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}><Trash2 size={15} /></button>
+                <button onClick={() => toggleAspCollapse(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}>
+                  {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                </button>
+              </div>
+            </div>
+            <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'var(--content-border)', marginTop: 12, overflow: 'hidden' }}>
+              <div style={{ width: `${prog}%`, height: '100%', background: 'var(--accent-green)', borderRadius: 2, transition: 'width 400ms ease' }} />
+            </div>
+            {!isCollapsed && (
+              <div style={{ borderTop: '1px solid var(--content-border)', paddingTop: 16, marginTop: 16 }}>
+                {renderTree(a.id, null, 'Annual')}
+                {!milestones.some(m => m.aspiration_id === a.id && m.horizon === 'Annual') && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId) && (
+                  <p style={{ fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No milestones yet — add an Annual Milestone to start breaking this down</p>
+                )}
+                {!(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId && msForm.horizon === 'Annual') && (
+                  <button onClick={() => openAddMs(a.id, null, 'Annual')} className="flex items-center gap-1" style={{ marginTop: 8, padding: '5px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--accent-coral)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 500 }}>
+                    <Plus size={13} /> Add Annual Milestone
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // ── Render area section ──
+  function renderAreaSection(areaId, label, color, asps, idx) {
+    const isCollapsed = collapsedAreas.has(areaId)
+    return (
+      <div key={areaId}>
+        <div ref={el => (sectionRefs.current[areaId] = el)} data-area-id={areaId}
+          className="flex items-center gap-2" style={{ marginTop: idx > 0 ? 24 : 0, marginBottom: 12 }}>
+          {color && <span style={{ width: 12, height: 12, borderRadius: 3, background: color, flexShrink: 0 }} />}
+          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: color ? 'var(--ink)' : 'var(--ink-faint)', fontStyle: color ? 'normal' : 'italic' }}>{label}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>({asps.length})</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--content-border)' }} />
+          <button onClick={() => toggleAreaCollapse(areaId)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}>
+            {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+        {!isCollapsed && <div className="flex flex-col gap-4">{asps.map(a => renderCard(a))}</div>}
+      </div>
+    )
+  }
+
   // ── Main render ──
   return (
     <div className="page-pad flex flex-col gap-7">
@@ -485,18 +642,67 @@ export default function AspirationsPage() {
           <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '28px', color: 'var(--ink)', marginBottom: '4px' }}>Aspirations</h1>
           <p style={{ fontSize: '14px', color: 'var(--ink-faint)' }}>Your long-term vision, broken down into action</p>
         </div>
-        <button onClick={openAddAsp} className="flex items-center gap-1" style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', background: 'var(--ink)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>
-          <Plus size={14} /> Add Aspiration
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setAreasPanel(p => !p)} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Manage Areas</button>
+          <button onClick={openAddAsp} className="flex items-center gap-1" style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', background: 'var(--ink)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>
+            <Plus size={14} /> Add Aspiration
+          </button>
+        </div>
       </div>
 
-      {/* Area filter */}
+      {/* Area nav pills */}
       {areas.length > 0 && (
         <div className="flex gap-2" style={{ overflowX: 'auto', paddingBottom: 4, flexWrap: 'nowrap' }}>
-          <button onClick={() => setAreaFilter(null)} style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: !areaFilter ? 500 : 400, background: !areaFilter ? 'var(--accent-coral)' : 'transparent', color: !areaFilter ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${!areaFilter ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>All</button>
-          {areas.map(a => (
-            <button key={a.id} onClick={() => setAreaFilter(a.id)} style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: areaFilter === a.id ? 500 : 400, background: areaFilter === a.id ? 'var(--accent-coral)' : 'transparent', color: areaFilter === a.id ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${areaFilter === a.id ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>{a.name}</button>
-          ))}
+          <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: !activeAreaPill ? 500 : 400, background: !activeAreaPill ? 'var(--accent-coral)' : 'transparent', color: !activeAreaPill ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${!activeAreaPill ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>All</button>
+          {areas.map(a => {
+            const ac = areaColor(a.name)
+            const active = activeAreaPill === a.id
+            return (
+              <button key={a.id} onClick={() => sectionRefs.current[a.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: active ? 500 : 400, background: active ? ac : 'transparent', color: active ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${active ? ac : 'var(--content-border)'}`, borderLeft: active ? undefined : `3px solid ${ac}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>{a.name}</button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Manage Areas panel */}
+      {areasPanel && (
+        <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', position: 'relative' }}>
+          <button onClick={() => setAreasPanel(false)} style={{ position: 'absolute', top: 14, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 2 }}><X size={16} /></button>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '16px', color: 'var(--ink)', marginBottom: 2 }}>Areas</div>
+          <p style={{ fontSize: '13px', color: 'var(--ink-faint)', marginBottom: 14 }}>Group your aspirations by area of focus</p>
+
+          {areas.length === 0 && <p style={{ fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 12 }}>No areas yet — add one below</p>}
+          <div className="flex flex-col gap-2" style={{ marginBottom: 14 }}>
+            {areas.map(a => {
+              const count = aspirations.filter(asp => asp.area_id === a.id).length
+              return (
+                <div key={a.id} className="flex items-center gap-2" style={{ padding: '4px 0' }}>
+                  <span style={{ width: 14, height: 14, borderRadius: 3, background: areaColor(a.name), flexShrink: 0 }} />
+                  {renamingAreaId === a.id ? (
+                    <input autoFocus value={renamingText} onChange={e => setRenamingText(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') renameArea(a.id, renamingText) }}
+                      onBlur={() => { if (renamingText.trim()) renameArea(a.id, renamingText); else setRenamingAreaId(null) }}
+                      style={{ ...inputStyle, flex: 1, fontSize: '14px' }} />
+                  ) : (
+                    <span style={{ flex: 1, fontFamily: 'var(--font-sans)', fontSize: '14px', color: 'var(--ink)' }}>{a.name}</span>
+                  )}
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>({count} aspiration{count !== 1 ? 's' : ''})</span>
+                  <button onClick={() => { setRenamingAreaId(a.id); setRenamingText(a.name) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Pencil size={13} /></button>
+                  {count === 0 ? (
+                    <button onClick={() => deleteArea(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Trash2 size={13} /></button>
+                  ) : (
+                    <span title="Remove aspirations from this area first" style={{ padding: 2, color: 'var(--content-border)', cursor: 'not-allowed' }}><Trash2 size={13} /></span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex gap-2">
+            <input value={areaInput} onChange={e => setAreaInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addArea() }}
+              placeholder="e.g. Climate, Arena, Internal" className="flex-1 outline-none" style={inputStyle} />
+            <button onClick={addArea} disabled={!areaInput.trim()} style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', background: areaInput.trim() ? 'var(--accent-coral)' : 'var(--content-border)', color: areaInput.trim() ? 'white' : 'var(--ink-faint)', border: 'none', cursor: areaInput.trim() ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Add area →</button>
+          </div>
         </div>
       )}
 
@@ -547,82 +753,11 @@ export default function AspirationsPage() {
         </div>
       )}
 
-      {/* Aspiration cards */}
-      {!loading && filtered.length > 0 && (
-        <div className="flex flex-col gap-4">
-          {filtered.map(a => {
-            const areaObj = areas.find(ar => ar.id === a.area_id)
-            const aName = areaObj?.name || null
-            const borderCol = areaColor(aName)
-            const prog = Math.round(progressMap['a-' + a.id] || 0)
-            const hasAnn = milestones.some(m => m.aspiration_id === a.id && m.horizon === 'Annual')
-            const showProg = prog > 0 || hasAnn
-            const isCollapsed = collapsedAsps.has(a.id)
-            const dateRange = a.start_date && a.end_date ? (() => {
-              const s = new Date(a.start_date + 'T00:00:00'), e = new Date(a.end_date + 'T00:00:00')
-              return `${MONTHS[s.getMonth()]} ${s.getFullYear()} → ${MONTHS[e.getMonth()]} ${e.getFullYear()} · ${a.horizon_years} year${a.horizon_years !== 1 ? 's' : ''}`
-            })() : null
-
-            return (
-              <div key={a.id} style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', borderLeft: `3px solid ${borderCol}` }}>
-
-                {deletingAspId === a.id ? (
-                  <div className="flex flex-col gap-3">
-                    <p style={{ fontSize: '14px', color: 'var(--ink-soft)', lineHeight: 1.5 }}>Delete this aspiration and all milestones beneath it? This cannot be undone.</p>
-                    <div className="flex gap-2">
-                      <button onClick={() => deleteAsp(a.id)} style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--danger)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Delete</button>
-                      <button onClick={() => setDeletingAspId(null)} style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px' }}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Card header */}
-                    <div className="flex items-center gap-3">
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        {aName && (
-                          <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-                            <span style={{ width: 10, height: 10, borderRadius: 2, background: borderCol, flexShrink: 0 }} />
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)' }}>{aName}</span>
-                          </div>
-                        )}
-                        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '16px', color: 'var(--ink)', lineHeight: 1.4 }}>{a.text}</div>
-                        {dateRange && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', marginTop: 4 }}>{dateRange}</div>}
-                      </div>
-                      <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
-                        {showProg && <span style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 700, color: prog > 0 ? 'var(--accent-green)' : 'var(--ink-faint)' }}>{prog}%</span>}
-                        {showProg && <ProgressRing progress={prog} />}
-                        <button onClick={() => openEditAsp(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}><Pencil size={15} /></button>
-                        <button onClick={() => setDeletingAspId(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}><Trash2 size={15} /></button>
-                        <button onClick={() => toggleAspCollapse(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}>
-                          {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'var(--content-border)', marginTop: 12, overflow: 'hidden' }}>
-                      <div style={{ width: `${prog}%`, height: '100%', background: 'var(--accent-green)', borderRadius: 2, transition: 'width 400ms ease' }} />
-                    </div>
-
-                    {/* Card body */}
-                    {!isCollapsed && (
-                      <div style={{ borderTop: '1px solid var(--content-border)', paddingTop: 16, marginTop: 16 }}>
-                        {renderTree(a.id, null, 'Annual')}
-                        {!milestones.some(m => m.aspiration_id === a.id && m.horizon === 'Annual') && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId) && (
-                          <p style={{ fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No milestones yet — add an Annual Milestone to start breaking this down</p>
-                        )}
-                        {!(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId && msForm.horizon === 'Annual') && (
-                          <button onClick={() => openAddMs(a.id, null, 'Annual')} className="flex items-center gap-1" style={{ marginTop: 8, padding: '5px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--accent-coral)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 500 }}>
-                            <Plus size={13} /> Add Annual Milestone
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )
-          })}
+      {/* Grouped aspiration cards */}
+      {!loading && aspirations.length > 0 && (
+        <div>
+          {areaGroups.groups.map(({ area, asps }, idx) => renderAreaSection(area.id, area.name, areaColor(area.name), asps, idx))}
+          {areaGroups.ungrouped.length > 0 && renderAreaSection('ungrouped', 'No area assigned', null, areaGroups.ungrouped, areaGroups.groups.length)}
         </div>
       )}
     </div>
