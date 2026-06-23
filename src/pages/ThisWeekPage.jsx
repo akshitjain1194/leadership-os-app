@@ -31,6 +31,17 @@ function formatDue(dateStr) {
   return { text: label, color: 'var(--ink-faint)', bold: false }
 }
 
+function classifyQuadrant(owner, dueDate) {
+  if (owner && owner !== 'Akshit') return owner === 'Rajesh' ? 'Awaited' : 'Delegated'
+  if (!dueDate) return 'Schedule'
+  const due = new Date(dueDate + 'T00:00:00')
+  const t = new Date(); t.setHours(0, 0, 0, 0)
+  const diff = Math.round((due - t) / 86400000)
+  if (diff <= 0) return 'Do Now'
+  if (diff <= 3) return 'Do Soon'
+  return 'Schedule'
+}
+
 function SkeletonRow() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '9px 18px', gap: 10 }}>
@@ -48,14 +59,19 @@ export default function ThisWeekPage() {
 
   const [tasks, setTasks] = useState([])
   const [milestones, setMilestones] = useState([])
+  const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(true)
   const [collapsedClusters, setCollapsedClusters] = useState(new Set())
   const [showDone, setShowDone] = useState(false)
   const [quickAdd, setQuickAdd] = useState({})
   const [msPickerTaskId, setMsPickerTaskId] = useState(null)
   const [msPickerSearch, setMsPickerSearch] = useState('')
+  const [editForm, setEditForm] = useState(null)
+  const [editMsSearch, setEditMsSearch] = useState('')
+  const [editMsOpen, setEditMsOpen] = useState(false)
 
   const msPickerRef = useRef(null)
+  const editPanelRef = useRef(null)
 
   const now = new Date()
   const todayLabel = `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}`
@@ -63,12 +79,14 @@ export default function ThisWeekPage() {
 
   async function fetchAll() {
     setLoading(true)
-    const [tR, mR] = await Promise.all([
+    const [tR, mR, pR] = await Promise.all([
       supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, starred, milestone_id').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('milestones').select('id, text, aspiration_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
+      supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
     ])
     setTasks(tR.data || [])
     setMilestones(mR.data || [])
+    setPeople(pR.data || [])
     setLoading(false)
   }
 
@@ -79,15 +97,20 @@ export default function ThisWeekPage() {
 
   useEffect(() => { fetchAll() }, [user.id])
 
-  // Milestone picker close on Escape / click-outside
+  // Escape / click-outside for milestone picker + edit panel
   useEffect(() => {
-    if (!msPickerTaskId) return
-    function onKey(e) { if (e.key === 'Escape') { setMsPickerTaskId(null); setMsPickerSearch('') } }
-    function onMouse(e) { if (msPickerRef.current && !msPickerRef.current.contains(e.target)) { setMsPickerTaskId(null); setMsPickerSearch('') } }
+    if (!msPickerTaskId && !editForm) return
+    function onKey(e) {
+      if (e.key === 'Escape') { setMsPickerTaskId(null); setMsPickerSearch(''); closeEditPanel() }
+    }
+    function onMouse(e) {
+      if (msPickerTaskId && msPickerRef.current && !msPickerRef.current.contains(e.target)) { setMsPickerTaskId(null); setMsPickerSearch('') }
+      if (editForm && editPanelRef.current && !editPanelRef.current.contains(e.target)) closeEditPanel()
+    }
     document.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onMouse)
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onMouse) }
-  }, [msPickerTaskId])
+  }, [msPickerTaskId, editForm])
 
   // ── Handlers ──
   async function toggleDone(task) {
@@ -102,6 +125,38 @@ export default function ThisWeekPage() {
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, starred: next } : t))
     const { error } = await supabase.from('tasks').update({ starred: next }).eq('id', task.id).eq('user_id', user.id)
     if (error) { showToast(error.message, 'error'); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, starred: !next } : t)) }
+  }
+
+  // ── Edit panel ──
+  function openEditPanel(task) {
+    setEditForm({ id: task.id, task: task.task, due_date: task.due_date || '', owner: task.owner || '', milestone_id: task.milestone_id || '', starred: task.starred })
+    setEditMsSearch(''); setEditMsOpen(false)
+    setMsPickerTaskId(null); setMsPickerSearch('')
+  }
+  function closeEditPanel() { setEditForm(null); setEditMsSearch(''); setEditMsOpen(false) }
+
+  async function saveEdit() {
+    if (!editForm || !editForm.task.trim()) return
+    const quadrant = classifyQuadrant(editForm.owner, editForm.due_date)
+    const { error } = await supabase.from('tasks').update({
+      task: editForm.task.trim(), due_date: editForm.due_date || null, owner: editForm.owner || null,
+      milestone_id: editForm.milestone_id || null, starred: editForm.starred, quadrant,
+    }).eq('id', editForm.id).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Task updated', 'success'); closeEditPanel(); await refetchTasks() }
+  }
+
+  async function toggleEditStar() {
+    if (!editForm) return
+    const next = !editForm.starred
+    setEditForm(p => ({ ...p, starred: next }))
+    setTasks(prev => prev.map(t => t.id === editForm.id ? { ...t, starred: next } : t))
+    const { error } = await supabase.from('tasks').update({ starred: next }).eq('id', editForm.id).eq('user_id', user.id)
+    if (error) {
+      showToast(error.message, 'error')
+      setEditForm(p => p ? { ...p, starred: !next } : p)
+      setTasks(prev => prev.map(t => t.id === editForm.id ? { ...t, starred: !next } : t))
+    }
   }
 
   async function handleQuickAdd(quadrant) {
@@ -174,6 +229,94 @@ export default function ThisWeekPage() {
     )
   }
 
+  // ── Inline edit panel ──
+  function renderEditPanel() {
+    if (!editForm) return null
+    const selectedMs = editForm.milestone_id ? milestones.find(m => m.id === editForm.milestone_id) : null
+    const filteredMs = editMsSearch ? milestones.filter(m => m.text.toLowerCase().includes(editMsSearch.toLowerCase())) : milestones
+    const labelSt = { fontSize: '10px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 4, display: 'block' }
+    const fieldSt = { border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', background: 'var(--content-bg-card)', color: 'var(--ink)', fontFamily: 'var(--font-sans)', fontSize: '13px', outline: 'none', width: '100%' }
+
+    return (
+      <div ref={editPanelRef}
+        onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveEdit() } }}
+        style={{ background: 'var(--content-bg)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '14px 18px', margin: '0 18px 4px 18px' }}>
+
+        <input value={editForm.task} onChange={e => setEditForm(p => ({ ...p, task: e.target.value }))}
+          style={{ width: '100%', border: 'none', borderBottom: '1px solid var(--content-border)', padding: '4px 0 8px', fontSize: '14px', fontFamily: 'var(--font-sans)', color: 'var(--ink)', outline: 'none', background: 'transparent' }} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 20px', marginTop: 12 }}>
+          <div>
+            <label style={labelSt}>Due date</label>
+            <div className="flex items-center gap-1">
+              <input type="date" value={editForm.due_date} onChange={e => setEditForm(p => ({ ...p, due_date: e.target.value }))}
+                style={{ ...fieldSt, flex: 1, fontFamily: 'var(--font-mono)' }} />
+              {editForm.due_date && <button onClick={() => setEditForm(p => ({ ...p, due_date: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)', flexShrink: 0, display: 'flex' }}><X size={12} /></button>}
+            </div>
+          </div>
+
+          <div>
+            <label style={labelSt}>Owner</label>
+            <select value={editForm.owner} onChange={e => setEditForm(p => ({ ...p, owner: e.target.value }))} style={fieldSt}>
+              <option value="">No owner</option>
+              {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelSt}>Milestone</label>
+            <div className="flex items-center" style={fieldSt}>
+              <input
+                value={editMsOpen ? editMsSearch : (selectedMs?.text || '')}
+                onChange={e => { setEditMsSearch(e.target.value); if (!editMsOpen) setEditMsOpen(true) }}
+                onFocus={() => { setEditMsOpen(true); setEditMsSearch('') }}
+                onBlur={() => setTimeout(() => setEditMsOpen(false), 150)}
+                placeholder="Search milestones…"
+                className="flex-1 outline-none"
+                style={{ border: 'none', background: 'transparent', fontSize: '13px', color: 'var(--ink)', padding: 0, fontFamily: 'var(--font-sans)' }} />
+              {selectedMs && !editMsOpen && <button onClick={() => setEditForm(p => ({ ...p, milestone_id: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 1, color: 'var(--ink-faint)', flexShrink: 0, display: 'flex' }}><X size={12} /></button>}
+            </div>
+            {editMsOpen && (
+              <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', marginTop: 2, maxHeight: 150, overflowY: 'auto' }}>
+                <div onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: '' })); setEditMsSearch(''); setEditMsOpen(false) }}
+                  style={{ padding: '6px 8px', cursor: 'pointer', fontSize: '13px', color: 'var(--ink-faint)', borderBottom: '1px solid var(--content-border)', transition: 'background 100ms' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>No milestone</div>
+                {filteredMs.map(m => (
+                  <div key={m.id} onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: m.id })); setEditMsSearch(''); setEditMsOpen(false) }}
+                    style={{ padding: '6px 8px', cursor: 'pointer', transition: 'background 100ms' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <div style={{ fontSize: '13px', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.text}</div>
+                    {m.aspirations?.text && <div style={{ fontSize: '11px', color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.aspirations.text}</div>}
+                  </div>
+                ))}
+                {filteredMs.length === 0 && editMsSearch && <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 8px' }}>No milestones found</p>}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={labelSt}>Priority</label>
+            <button onClick={toggleEditStar} style={{
+              padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontSize: '13px', fontFamily: 'var(--font-sans)', fontWeight: 500, width: '100%', textAlign: 'center',
+              background: editForm.starred ? 'var(--accent-coral)' : 'transparent',
+              color: editForm.starred ? 'white' : 'var(--ink-faint)',
+              border: `1px solid ${editForm.starred ? 'var(--accent-coral)' : 'var(--content-border)'}`,
+            }}>{editForm.starred ? '★ In today’s focus' : '☆ Add to focus'}</button>
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end" style={{ marginTop: 14 }}>
+          <button onClick={saveEdit}
+            style={{ padding: '7px 20px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-coral)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Save</button>
+          <button onClick={closeEditPanel}
+            style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px' }}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
+
   // ── Cluster card ──
   function renderCluster(cluster) {
     const clusterTasks = activeTasks.filter(t => t.quadrant === cluster.key)
@@ -207,6 +350,7 @@ export default function ThisWeekPage() {
               clusterTasks.map((task, idx) => (
                 <div key={task.id} style={idx < clusterTasks.length - 1 ? { borderBottom: '1px solid rgba(232,227,218,0.5)' } : undefined}>
                   {renderTaskRow(task, cluster)}
+                  {editForm?.id === task.id && renderEditPanel()}
                   {msPickerTaskId === task.id && renderMsPicker(task)}
                 </div>
               ))
@@ -240,8 +384,8 @@ export default function ThisWeekPage() {
           {task.done && <Check size={10} color="white" strokeWidth={3} />}
         </button>
 
-        {/* Text */}
-        <span style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', lineHeight: 1.4, color: task.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.4 : 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+        {/* Text — click to edit */}
+        <span onClick={() => openEditPanel(task)} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', lineHeight: 1.4, color: task.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.4 : 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', cursor: 'pointer' }}>
           {task.task}
         </span>
 
@@ -255,12 +399,12 @@ export default function ThisWeekPage() {
 
         {/* Milestone link indicator */}
         {task.milestone_id ? (
-          <div title="Linked to milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch('') }}
+          <div title="Linked to milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch(''); closeEditPanel() }}
             style={{ width: 14, height: 14, borderRadius: '50%', background: '#2d6a4f', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
             <Check size={8} color="white" strokeWidth={3} />
           </div>
         ) : (
-          <div title="Not linked to any milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch('') }}
+          <div title="Not linked to any milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch(''); closeEditPanel() }}
             style={{ width: 14, height: 14, borderRadius: '50%', border: '1px dashed var(--content-border)', background: 'transparent', cursor: 'pointer', flexShrink: 0 }} />
         )}
 
@@ -337,6 +481,7 @@ export default function ThisWeekPage() {
               {doneTasks.map((task, idx) => (
                 <div key={task.id} style={idx < doneTasks.length - 1 ? { borderBottom: '1px solid rgba(232,227,218,0.5)' } : undefined}>
                   {renderTaskRow(task, {})}
+                  {editForm?.id === task.id && renderEditPanel()}
                 </div>
               ))}
             </div>
