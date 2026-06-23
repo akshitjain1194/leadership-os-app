@@ -2,9 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { showToast } from '../components/Toast'
+import { getAreaColor } from '../lib/areaUtils'
 import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X } from 'lucide-react'
-
-const AREA_COLORS = ['#2d6a4f', '#e07a5f', '#7b5ea7', '#c8982a', '#185fa5', '#2d9596', '#dc2626', '#d97706']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CHILD_H = { Annual: 'SixMonth', SixMonth: 'Monthly', Monthly: 'Weekly' }
 const HORIZON_BADGE = {
@@ -19,13 +18,6 @@ const PLACEHOLDER = {
   SixMonth: 'What does this six-month period deliver?',
   Monthly: 'What gets done this month?',
   Weekly: 'What happens this week?',
-}
-
-function areaColor(name) {
-  if (!name) return '#9898b8'
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h)
-  return AREA_COLORS[Math.abs(h) % AREA_COLORS.length]
 }
 
 function getInitials(name) {
@@ -533,7 +525,7 @@ export default function AspirationsPage() {
   function renderCard(a) {
     const areaObj = areas.find(ar => ar.id === a.area_id)
     const aName = areaObj?.name || null
-    const borderCol = areaColor(aName)
+    const borderCol = getAreaColor(aName)
     const prog = Math.round(progressMap['a-' + a.id] || 0)
     const hasAnn = milestones.some(m => m.aspiration_id === a.id && m.horizon === 'Annual')
     const showProg = prog > 0 || hasAnn
@@ -571,7 +563,7 @@ export default function AspirationsPage() {
                         <div key={ar.id} onClick={() => reassignArea(a.id, ar.id)} className="flex items-center gap-2"
                           style={{ padding: '5px 10px', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }}
                           onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                          <span style={{ width: 10, height: 10, borderRadius: 3, background: areaColor(ar.name), flexShrink: 0 }} />
+                          <span style={{ width: 10, height: 10, borderRadius: 3, background: getAreaColor(ar.name), flexShrink: 0 }} />
                           <span style={{ color: 'var(--ink)' }}>{ar.name}</span>
                         </div>
                       ))}
@@ -655,7 +647,7 @@ export default function AspirationsPage() {
         <div className="flex gap-2" style={{ overflowX: 'auto', paddingBottom: 4, flexWrap: 'nowrap' }}>
           <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: !activeAreaPill ? 500 : 400, background: !activeAreaPill ? 'var(--accent-coral)' : 'transparent', color: !activeAreaPill ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${!activeAreaPill ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>All</button>
           {areas.map(a => {
-            const ac = areaColor(a.name)
+            const ac = getAreaColor(a.name)
             const active = activeAreaPill === a.id
             return (
               <button key={a.id} onClick={() => sectionRefs.current[a.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
@@ -678,7 +670,7 @@ export default function AspirationsPage() {
               const count = aspirations.filter(asp => asp.area_id === a.id).length
               return (
                 <div key={a.id} className="flex items-center gap-2" style={{ padding: '4px 0' }}>
-                  <span style={{ width: 14, height: 14, borderRadius: 3, background: areaColor(a.name), flexShrink: 0 }} />
+                  <span style={{ width: 14, height: 14, borderRadius: 3, background: getAreaColor(a.name), flexShrink: 0 }} />
                   {renamingAreaId === a.id ? (
                     <input autoFocus value={renamingText} onChange={e => setRenamingText(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') renameArea(a.id, renamingText) }}
@@ -756,7 +748,7 @@ export default function AspirationsPage() {
       {/* Grouped aspiration cards */}
       {!loading && aspirations.length > 0 && (
         <div>
-          {areaGroups.groups.map(({ area, asps }, idx) => renderAreaSection(area.id, area.name, areaColor(area.name), asps, idx))}
+          {areaGroups.groups.map(({ area, asps }, idx) => renderAreaSection(area.id, area.name, getAreaColor(area.name), asps, idx))}
           {areaGroups.ungrouped.length > 0 && renderAreaSection('ungrouped', 'No area assigned', null, areaGroups.ungrouped, areaGroups.groups.length)}
         </div>
       )}

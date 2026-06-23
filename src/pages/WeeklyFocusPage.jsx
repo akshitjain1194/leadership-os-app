@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { getOwnerName } from '../lib/taskUtils'
+import { getAreaColor } from '../lib/areaUtils'
 import { showToast } from '../components/Toast'
 import { Check, ChevronDown, ChevronRight, CalendarCheck, User, X } from 'lucide-react'
 
@@ -98,10 +99,12 @@ export default function WeeklyFocusPage() {
   const [allMs, setAllMs] = useState([])
   const [tasks, setTasks] = useState([])
   const [people, setPeople] = useState([])
+  const [areas, setAreas] = useState([])
   const [loading, setLoading] = useState(true)
 
   const [dateFilter, setDateFilter] = useState('all')
   const [anchorFilter, setAnchorFilter] = useState(null)
+  const [areaFilter, setAreaFilter] = useState(null)
   const [expandedCards, setExpandedCards] = useState(new Set())
   const [linkPickerMsId, setLinkPickerMsId] = useState(null)
   const [linkSearch, setLinkSearch] = useState('')
@@ -110,16 +113,18 @@ export default function WeeklyFocusPage() {
 
   async function fetchAll() {
     setLoading(true)
-    const [msR, tR, pR, allMsR] = await Promise.all([
-      supabase.from('milestones').select('id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
+    const [msR, tR, pR, allMsR, arR] = await Promise.all([
+      supabase.from('milestones').select('id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(id, text, area_id)').eq('user_id', user.id).eq('horizon', 'Weekly'),
       supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id),
       supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
       supabase.from('milestones').select('id, text, horizon, parent_milestone_id, aspiration_id').eq('user_id', user.id),
+      supabase.from('areas').select('id, name').eq('user_id', user.id).order('name'),
     ])
     setWeeklyMs(msR.data || [])
     setTasks(tR.data || [])
     setPeople(pR.data || [])
     setAllMs(allMsR.data || [])
+    setAreas(arR.data || [])
     setLoading(false)
   }
 
@@ -168,26 +173,48 @@ export default function WeeklyFocusPage() {
     return { total: linked.length, done, pct: Math.round((done / linked.length) * 100), hasTasks: true }
   }
 
+  function getAreaForMilestone(ms) {
+    const areaId = ms.aspirations?.area_id
+    if (!areaId) return null
+    return areas.find(a => a.id === areaId) || null
+  }
+
   // ── Filtering & sorting ──
   const today = todayDateStr()
   const in10 = addDays(today, 10)
 
+  // 1. Date filter
   let dateFiltered = weeklyMs
   if (dateFilter === 'due10') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date >= today && m.due_date <= in10 && m.status !== 'Done')
   if (dateFilter === 'overdue') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date < today && m.status !== 'Done')
 
+  // 2. Anchor filter
+  const afterAnchor = anchorFilter ? dateFiltered.filter(m => m.anchor_person_id === anchorFilter) : dateFiltered
+
+  // 3. Area filter
+  const filtered = areaFilter ? afterAnchor.filter(m => getAreaForMilestone(m)?.id === areaFilter) : afterAnchor
+  const sorted = sortMilestones(filtered)
+
+  // Anchor people — computed from date+area filtered milestones
   const anchorPeople = (() => {
+    const base = areaFilter ? dateFiltered.filter(m => getAreaForMilestone(m)?.id === areaFilter) : dateFiltered
     const counts = {}
-    dateFiltered.forEach(m => { if (m.anchor_person_id) counts[m.anchor_person_id] = (counts[m.anchor_person_id] || 0) + 1 })
+    base.forEach(m => { if (m.anchor_person_id) counts[m.anchor_person_id] = (counts[m.anchor_person_id] || 0) + 1 })
     return Object.entries(counts).map(([id, count]) => { const p = people.find(x => x.id === id); return p ? { ...p, count } : null }).filter(Boolean)
   })()
 
-  const filtered = anchorFilter ? dateFiltered.filter(m => m.anchor_person_id === anchorFilter) : dateFiltered
-  const sorted = sortMilestones(filtered)
+  // Area pills — computed from date+anchor filtered milestones
+  const visibleAreas = (() => {
+    const base = anchorFilter ? dateFiltered.filter(m => m.anchor_person_id === anchorFilter) : dateFiltered
+    const seen = new Set()
+    base.forEach(m => { const a = getAreaForMilestone(m); if (a) seen.add(a.id) })
+    return areas.filter(a => seen.has(a.id))
+  })()
 
-  const overdueCount = weeklyMs.filter(m => m.due_date && m.due_date < today && m.status !== 'Done').length
-  const dueWeekCount = weeklyMs.filter(m => m.due_date && m.due_date >= today && m.due_date <= addDays(today, 7) && m.status !== 'Done').length
-  const doneCount = weeklyMs.filter(m => m.status === 'Done').length
+  // Summary counts from filtered results
+  const overdueCount = filtered.filter(m => m.due_date && m.due_date < today && m.status !== 'Done').length
+  const dueWeekCount = filtered.filter(m => m.due_date && m.due_date >= today && m.due_date <= addDays(today, 7) && m.status !== 'Done').length
+  const doneCount = filtered.filter(m => m.status === 'Done').length
 
   const pillStyle = (active) => ({
     padding: '5px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: active ? 500 : 400,
@@ -206,7 +233,7 @@ export default function WeeklyFocusPage() {
       {/* Summary row */}
       {!loading && weeklyMs.length > 0 && (
         <div className="flex gap-6 flex-wrap" style={{ marginBottom: 4 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--ink-faint)' }}>{weeklyMs.length} milestone{weeklyMs.length !== 1 ? 's' : ''}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--ink-faint)' }}>{filtered.length} milestone{filtered.length !== 1 ? 's' : ''}</span>
           {dueWeekCount > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent-gold)' }}>{dueWeekCount} due this week</span>}
           {overdueCount > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--danger)' }}>{overdueCount} overdue</span>}
           {doneCount > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent-green)' }}>{doneCount} done</span>}
@@ -215,20 +242,33 @@ export default function WeeklyFocusPage() {
 
       {/* Filter bar */}
       {!loading && weeklyMs.length > 0 && (
-        <div className="flex gap-3 flex-wrap items-center" style={{ marginBottom: 8 }}>
-          <div className="flex gap-2">
-            {[['all', 'All'], ['due10', 'Due in 10 days'], ['overdue', 'Overdue']].map(([k, l]) => (
-              <button key={k} onClick={() => { setDateFilter(k); setAnchorFilter(null) }} style={pillStyle(dateFilter === k)}>{l}</button>
-            ))}
+        <div className="flex flex-col gap-3" style={{ marginBottom: 8 }}>
+          <div className="flex gap-3 flex-wrap items-center">
+            <div className="flex gap-2">
+              {[['all', 'All'], ['due10', 'Due in 10 days'], ['overdue', 'Overdue']].map(([k, l]) => (
+                <button key={k} onClick={() => { setDateFilter(k); setAnchorFilter(null); setAreaFilter(null) }} style={pillStyle(dateFilter === k)}>{l}</button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <User size={14} style={{ color: 'var(--ink-faint)' }} />
+              <select value={anchorFilter || ''} onChange={e => setAnchorFilter(e.target.value || null)}
+                style={{ background: 'white', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', minWidth: 180, fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--ink)', outline: 'none', cursor: 'pointer' }}>
+                <option value="">All anchors</option>
+                {anchorPeople.map(p => <option key={p.id} value={p.id}>{p.name} ({p.count})</option>)}
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <User size={14} style={{ color: 'var(--ink-faint)' }} />
-            <select value={anchorFilter || ''} onChange={e => setAnchorFilter(e.target.value || null)}
-              style={{ background: 'white', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', minWidth: 180, fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--ink)', outline: 'none', cursor: 'pointer' }}>
-              <option value="">All anchors</option>
-              {anchorPeople.map(p => <option key={p.id} value={p.id}>{p.name} ({p.count})</option>)}
-            </select>
-          </div>
+          {visibleAreas.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setAreaFilter(null)} style={pillStyle(!areaFilter)}>All areas</button>
+              {visibleAreas.map(a => (
+                <button key={a.id} onClick={() => setAreaFilter(a.id)} className="flex items-center gap-1.5" style={pillStyle(areaFilter === a.id)}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: areaFilter === a.id ? 'white' : getAreaColor(a.name), flexShrink: 0, opacity: areaFilter === a.id ? 0.7 : 1 }} />
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -249,7 +289,7 @@ export default function WeeklyFocusPage() {
       {!loading && weeklyMs.length > 0 && sorted.length === 0 && (
         <div className="flex flex-col items-center gap-3 py-12" style={{ color: 'var(--ink-faint)' }}>
           <p style={{ fontSize: '14px' }}>No milestones match this filter</p>
-          <button onClick={() => { setDateFilter('all'); setAnchorFilter(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-coral)', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, textDecoration: 'underline' }}>Clear filters</button>
+          <button onClick={() => { setDateFilter('all'); setAnchorFilter(null); setAreaFilter(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-coral)', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, textDecoration: 'underline' }}>Clear all filters</button>
         </div>
       )}
 
