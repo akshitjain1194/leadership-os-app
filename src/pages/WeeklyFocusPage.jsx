@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { getOwnerName } from '../lib/taskUtils'
 import { showToast } from '../components/Toast'
 import { Check, ChevronDown, ChevronRight, CalendarCheck, User, X } from 'lucide-react'
 
@@ -111,7 +112,7 @@ export default function WeeklyFocusPage() {
     setLoading(true)
     const [msR, tR, pR, allMsR] = await Promise.all([
       supabase.from('milestones').select('id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
-      supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, starred, milestone_id').eq('user_id', user.id),
+      supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id),
       supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
       supabase.from('milestones').select('id, text, horizon, parent_milestone_id, aspiration_id').eq('user_id', user.id),
     ])
@@ -123,7 +124,7 @@ export default function WeeklyFocusPage() {
   }
 
   async function refetchTasks() {
-    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, starred, milestone_id').eq('user_id', user.id)
+    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id)
     if (data) setTasks(data)
   }
 
@@ -336,9 +337,8 @@ export default function WeeklyFocusPage() {
                           </button>
                           <span style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', lineHeight: 1.4, color: t.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: t.done ? 'line-through' : 'none' }}>{t.task}</span>
                           {td && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: td.color, flexShrink: 0 }}>{td.text}</span>}
-                          {t.owner && anchor && t.owner !== anchor.name && (
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 8px', borderRadius: 20, background: 'var(--content-bg)', border: '1px solid var(--content-border)', color: 'var(--ink-soft)', flexShrink: 0 }}>{t.owner}</span>
-                          )}
+                          {(() => { const on = getOwnerName(t, people); return on && anchor && on !== anchor.name ? (
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 8px', borderRadius: 20, background: 'var(--content-bg)', border: '1px solid var(--content-border)', color: 'var(--ink-soft)', flexShrink: 0 }}>{on}</span>) : null })()}
                           {t.quadrant && qb && (
                             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 5px', borderRadius: 8, background: qb.bg, color: qb.color, flexShrink: 0, whiteSpace: 'nowrap' }}>{t.quadrant}</span>
                           )}

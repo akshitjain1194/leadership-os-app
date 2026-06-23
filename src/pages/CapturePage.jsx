@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { format, isAfter, isBefore, subDays, subHours } from 'date-fns'
 import { supabase } from '../lib/supabase'
+import { getQuadrant, findSelfPersonId, findRajeshPersonId } from '../lib/taskUtils'
 import { showToast } from '../components/Toast'
 import EmptyState from '../components/EmptyState'
 
@@ -9,32 +10,19 @@ import EmptyState from '../components/EmptyState'
 
 const QUADRANT_KEYS = ['Do Now', 'Do Soon', 'Schedule', 'Delegated', 'Awaited']
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function classifyTask(owner, dueDate) {
-  if (owner === 'Rajesh') return 'Awaited'
-  if (owner && owner !== 'Akshit') return 'Delegated'
-  if (!dueDate) return 'Schedule'
-  const due   = new Date(dueDate + 'T00:00:00')
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const diff  = Math.round((due - today) / 86400000)
-  if (diff <= 0) return 'Do Now'
-  if (diff <= 3) return 'Do Soon'
-  return 'Schedule'
-}
-
 // ── IdeaCard ──────────────────────────────────────────────────────────────────
 
-function IdeaCard({ idea, people, peopleLoading, onConvert, onRelease }) {
+function IdeaCard({ idea, people, peopleLoading, selfPersonId, rajeshPersonId, onConvert, onRelease }) {
   const [converting, setConverting] = useState(false)
-  const [convOwner, setConvOwner]   = useState('')
+  const [convOwnerId, setConvOwnerId] = useState('')
   const [convDate, setConvDate]     = useState(format(new Date(), 'yyyy-MM-dd'))
 
   const ageDays = Math.floor((Date.now() - new Date(idea.created_at).getTime()) / 86400000)
   const isAging = ageDays >= 7
 
   async function doConvert() {
-    await onConvert(idea, convOwner, convDate)
+    const person = convOwnerId ? people.find(p => p.id === convOwnerId) : null
+    await onConvert(idea, convOwnerId, person?.name || '', convDate, selfPersonId, rajeshPersonId)
     setConverting(false)
   }
 
@@ -65,11 +53,11 @@ function IdeaCard({ idea, people, peopleLoading, onConvert, onRelease }) {
       {converting ? (
         <div className="flex flex-col gap-2 pt-2" style={{ borderTop: '1px solid var(--content-border)' }}>
           <select
-            value={convOwner}
-            onChange={e => setConvOwner(e.target.value)}
+            value={convOwnerId}
+            onChange={e => setConvOwnerId(e.target.value)}
             disabled={peopleLoading || people.length === 0}
             className="w-full"
-            style={{ border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', background: 'var(--content-bg)', color: convOwner ? 'var(--ink)' : 'var(--ink-faint)', fontFamily: 'var(--font-sans)', fontSize: '13px' }}
+            style={{ border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', background: 'var(--content-bg)', color: convOwnerId ? 'var(--ink)' : 'var(--ink-faint)', fontFamily: 'var(--font-sans)', fontSize: '13px' }}
           >
             {peopleLoading ? (
               <option value="">Loading…</option>
@@ -78,7 +66,7 @@ function IdeaCard({ idea, people, peopleLoading, onConvert, onRelease }) {
             ) : (
               <>
                 <option value="">Owner (optional)</option>
-                {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </>
             )}
           </select>
@@ -146,9 +134,9 @@ function ReviewCard({ label, count, countColor, children }) {
 export default function CapturePage() {
   const { user } = useOutletContext()
 
-  const [text,    setText]    = useState('')
-  const [owner,   setOwner]   = useState('')
-  const [date,    setDate]    = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [text,      setText]      = useState('')
+  const [ownerId,   setOwnerId]   = useState('')
+  const [date,      setDate]      = useState(format(new Date(), 'yyyy-MM-dd'))
   const [saving,  setSaving]  = useState(false)
   const [captureConfirm, setCaptureConfirm] = useState(null)
 
@@ -203,24 +191,29 @@ export default function CapturePage() {
     setTaskCounts(counts)
   }
 
+  const selfPersonId = findSelfPersonId(people)
+  const rajeshPersonId = findRajeshPersonId(people)
+
   async function handleCapture() {
     if (!text.trim()) return
     setSaving(true)
     try {
-      if (!owner) {
+      if (!ownerId) {
         const { error } = await supabase.from('ideas').insert({ user_id: user.id, text: text.trim(), status: 'Active' })
         if (error) throw error
         setCaptureConfirm('Parked as idea')
         await loadIdeas()
       } else {
-        const quadrant = classifyTask(owner, date)
-        const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text.trim(), owner, due_date: date || null, quadrant, done: false, starred: false })
+        const person = people.find(p => p.id === ownerId)
+        const ownerName = person?.name || ''
+        const quadrant = getQuadrant(ownerId, date || null, selfPersonId, rajeshPersonId)
+        const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text.trim(), owner_id: ownerId, owner: ownerName, due_date: date || null, quadrant, done: false, starred: false })
         if (error) throw error
         setCaptureConfirm(`Routed to ${quadrant}`)
         await loadTaskCounts()
       }
       setTimeout(() => setCaptureConfirm(null), 2200)
-      setText(''); setOwner(''); setDate(format(new Date(), 'yyyy-MM-dd'))
+      setText(''); setOwnerId(''); setDate(format(new Date(), 'yyyy-MM-dd'))
       textareaRef.current?.focus()
     } catch (e) {
       showToast(e.message, 'error')
@@ -228,10 +221,10 @@ export default function CapturePage() {
     setSaving(false)
   }
 
-  async function handleConvert(idea, convOwner, convDate) {
+  async function handleConvert(idea, convOwnerId, convOwnerName, convDate, selfId, rajeshId) {
     try {
-      const quadrant = classifyTask(convOwner, convDate)
-      const { error: taskErr } = await supabase.from('tasks').insert({ user_id: user.id, task: idea.text, owner: convOwner, due_date: convDate || null, quadrant, done: false, starred: false })
+      const quadrant = getQuadrant(convOwnerId || null, convDate || null, selfId, rajeshId)
+      const { error: taskErr } = await supabase.from('tasks').insert({ user_id: user.id, task: idea.text, owner_id: convOwnerId || null, owner: convOwnerName || null, due_date: convDate || null, quadrant, done: false, starred: false })
       if (taskErr) throw taskErr
       const { error: ideaErr } = await supabase.from('ideas').update({ status: 'Converted' }).eq('id', idea.id).eq('user_id', user.id)
       if (ideaErr) throw ideaErr
@@ -296,10 +289,10 @@ export default function CapturePage() {
         {/* Controls */}
         <div className="flex gap-3 flex-wrap items-center" style={{ padding: '12px 20px', background: 'var(--content-bg)' }}>
           <select
-            value={owner}
-            onChange={e => setOwner(e.target.value)}
+            value={ownerId}
+            onChange={e => setOwnerId(e.target.value)}
             className="flex-1"
-            style={{ minWidth: '130px', border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', background: 'var(--content-bg-card)', color: owner ? 'var(--ink)' : 'var(--ink-faint)', fontFamily: 'var(--font-sans)', fontSize: '13px' }}
+            style={{ minWidth: '130px', border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', background: 'var(--content-bg-card)', color: ownerId ? 'var(--ink)' : 'var(--ink-faint)', fontFamily: 'var(--font-sans)', fontSize: '13px' }}
           >
             {peopleLoading ? (
               <option value="">Loading…</option>
@@ -308,7 +301,7 @@ export default function CapturePage() {
             ) : (
               <>
                 <option value="">Owner (optional)</option>
-                {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </>
             )}
           </select>
@@ -432,7 +425,7 @@ export default function CapturePage() {
         {!ideasLoading && !ideasError && filteredIdeas.length > 0 && (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
             {filteredIdeas.map(i => (
-              <IdeaCard key={i.id} idea={i} people={people} peopleLoading={peopleLoading} onConvert={handleConvert} onRelease={handleRelease} />
+              <IdeaCard key={i.id} idea={i} people={people} peopleLoading={peopleLoading} selfPersonId={selfPersonId} rajeshPersonId={rajeshPersonId} onConvert={handleConvert} onRelease={handleRelease} />
             ))}
           </div>
         )}

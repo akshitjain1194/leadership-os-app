@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Star, Check, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { getQuadrant, getOwnerName, findSelfPersonId, findRajeshPersonId } from '../lib/taskUtils'
 import { showToast } from '../components/Toast'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -29,17 +30,6 @@ function formatDue(dateStr) {
   const label = `${MONTHS[d.getMonth()]} ${d.getDate()}`
   if (d < t) return { text: label, color: 'var(--danger)', bold: true }
   return { text: label, color: 'var(--ink-faint)', bold: false }
-}
-
-function classifyQuadrant(owner, dueDate) {
-  if (owner && owner !== 'Akshit') return owner === 'Rajesh' ? 'Awaited' : 'Delegated'
-  if (!dueDate) return 'Schedule'
-  const due = new Date(dueDate + 'T00:00:00')
-  const t = new Date(); t.setHours(0, 0, 0, 0)
-  const diff = Math.round((due - t) / 86400000)
-  if (diff <= 0) return 'Do Now'
-  if (diff <= 3) return 'Do Soon'
-  return 'Schedule'
 }
 
 function SkeletonRow() {
@@ -80,7 +70,7 @@ export default function ThisWeekPage() {
   async function fetchAll() {
     setLoading(true)
     const [tR, mR, pR] = await Promise.all([
-      supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, starred, milestone_id').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('milestones').select('id, text, aspiration_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
       supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
     ])
@@ -91,7 +81,7 @@ export default function ThisWeekPage() {
   }
 
   async function refetchTasks() {
-    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, starred, milestone_id').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false })
+    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false })
     if (data) setTasks(data)
   }
 
@@ -129,17 +119,22 @@ export default function ThisWeekPage() {
 
   // ── Edit panel ──
   function openEditPanel(task) {
-    setEditForm({ id: task.id, task: task.task, due_date: task.due_date || '', owner: task.owner || '', milestone_id: task.milestone_id || '', starred: task.starred })
+    setEditForm({ id: task.id, task: task.task, due_date: task.due_date || '', owner_id: task.owner_id || '', milestone_id: task.milestone_id || '', starred: task.starred })
     setEditMsSearch(''); setEditMsOpen(false)
     setMsPickerTaskId(null); setMsPickerSearch('')
   }
   function closeEditPanel() { setEditForm(null); setEditMsSearch(''); setEditMsOpen(false) }
 
+  const selfPersonId = findSelfPersonId(people)
+  const rajeshPersonId = findRajeshPersonId(people)
+
   async function saveEdit() {
     if (!editForm || !editForm.task.trim()) return
-    const quadrant = classifyQuadrant(editForm.owner, editForm.due_date)
+    const selectedOwnerId = editForm.owner_id || null
+    const ownerName = selectedOwnerId ? (people.find(p => p.id === selectedOwnerId)?.name || null) : null
+    const quadrant = getQuadrant(selectedOwnerId, editForm.due_date || null, selfPersonId, rajeshPersonId)
     const { error } = await supabase.from('tasks').update({
-      task: editForm.task.trim(), due_date: editForm.due_date || null, owner: editForm.owner || null,
+      task: editForm.task.trim(), due_date: editForm.due_date || null, owner_id: selectedOwnerId, owner: ownerName,
       milestone_id: editForm.milestone_id || null, starred: editForm.starred, quadrant,
     }).eq('id', editForm.id).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
@@ -162,7 +157,8 @@ export default function ThisWeekPage() {
   async function handleQuickAdd(quadrant) {
     const text = (quickAdd[quadrant] || '').trim()
     if (!text) return
-    const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text, quadrant, owner: 'Akshit', due_date: quadrant === 'Do Now' ? todayStr : null, done: false, starred: false })
+    const selfName = people.find(p => p.id === selfPersonId)?.name || 'Akshit'
+    const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text, quadrant, owner_id: selfPersonId, owner: selfName, due_date: quadrant === 'Do Now' ? todayStr : null, done: false, starred: false })
     if (error) showToast(error.message, 'error')
     else { setQuickAdd(p => ({ ...p, [quadrant]: '' })); await refetchTasks() }
   }
@@ -257,9 +253,9 @@ export default function ThisWeekPage() {
 
           <div>
             <label style={labelSt}>Owner</label>
-            <select value={editForm.owner} onChange={e => setEditForm(p => ({ ...p, owner: e.target.value }))} style={fieldSt}>
+            <select value={editForm.owner_id} onChange={e => setEditForm(p => ({ ...p, owner_id: e.target.value }))} style={fieldSt}>
               <option value="">No owner</option>
-              {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
 
@@ -393,9 +389,9 @@ export default function ThisWeekPage() {
         {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: due.color, fontWeight: due.bold ? 600 : 400, flexShrink: 0 }}>{due.text}</span>}
 
         {/* Owner badge — only on Delegated/Awaited */}
-        {cluster.showOwner && task.owner && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 8px', borderRadius: 20, background: 'var(--content-bg)', border: '1px solid var(--content-border)', color: 'var(--ink-soft)', flexShrink: 0 }}>{task.owner}</span>
-        )}
+        {cluster.showOwner && (() => { const n = getOwnerName(task, people); return n ? (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 8px', borderRadius: 20, background: 'var(--content-bg)', border: '1px solid var(--content-border)', color: 'var(--ink-soft)', flexShrink: 0 }}>{n}</span>
+        ) : null })()}
 
         {/* Milestone link indicator */}
         {task.milestone_id ? (
