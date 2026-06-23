@@ -32,6 +32,10 @@ function formatDue(dateStr) {
   return { text: label, color: 'var(--ink-faint)', bold: false }
 }
 
+let cachedData = null
+let cacheTime = null
+const CACHE_TTL = 60000
+
 function SkeletonRow() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '9px 18px', gap: 10 }}>
@@ -68,21 +72,33 @@ export default function ThisWeekPage() {
   const todayStr = todayDateStr()
 
   async function fetchAll() {
-    setLoading(true)
+    if (cachedData && cacheTime && Date.now() - cacheTime < CACHE_TTL) {
+      setTasks(cachedData.tasks); setMilestones(cachedData.milestones); setPeople(cachedData.people)
+      setLoading(false)
+      return
+    }
+    if (cachedData) {
+      setTasks(cachedData.tasks); setMilestones(cachedData.milestones); setPeople(cachedData.people)
+      setLoading(false)
+    }
+    const showSkeleton = !cachedData
+    if (showSkeleton) setLoading(true)
     const [tR, mR, pR] = await Promise.all([
-      supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).eq('done', false).order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('milestones').select('id, text, aspiration_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
       supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
     ])
-    setTasks(tR.data || [])
-    setMilestones(mR.data || [])
-    setPeople(pR.data || [])
+    const fresh = { tasks: tR.data || [], milestones: mR.data || [], people: pR.data || [] }
+    cachedData = fresh; cacheTime = Date.now()
+    setTasks(fresh.tasks); setMilestones(fresh.milestones); setPeople(fresh.people)
     setLoading(false)
   }
 
+  function invalidateCache() { cachedData = null; cacheTime = null }
+
   async function refetchTasks() {
-    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false })
-    if (data) setTasks(data)
+    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).eq('done', false).order('due_date', { ascending: true, nullsFirst: false })
+    if (data) { setTasks(data); if (cachedData) { cachedData = { ...cachedData, tasks: data }; cacheTime = Date.now() } }
   }
 
   useEffect(() => { fetchAll() }, [user.id])
@@ -138,7 +154,7 @@ export default function ThisWeekPage() {
       milestone_id: editForm.milestone_id || null, starred: editForm.starred, quadrant,
     }).eq('id', editForm.id).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Task updated', 'success'); closeEditPanel(); await refetchTasks() }
+    else { showToast('Task updated', 'success'); closeEditPanel(); invalidateCache(); await refetchTasks() }
   }
 
   async function toggleEditStar() {
@@ -160,19 +176,19 @@ export default function ThisWeekPage() {
     const selfName = people.find(p => p.id === selfPersonId)?.name || 'Akshit'
     const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text, quadrant, owner_id: selfPersonId, owner: selfName, due_date: quadrant === 'Do Now' ? todayStr : null, done: false, starred: false })
     if (error) showToast(error.message, 'error')
-    else { setQuickAdd(p => ({ ...p, [quadrant]: '' })); await refetchTasks() }
+    else { setQuickAdd(p => ({ ...p, [quadrant]: '' })); invalidateCache(); await refetchTasks() }
   }
 
   async function handleLinkMs(taskId, milestoneId) {
     const { error } = await supabase.from('tasks').update({ milestone_id: milestoneId }).eq('id', taskId).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Linked', 'success'); setMsPickerTaskId(null); setMsPickerSearch(''); await refetchTasks() }
+    else { showToast('Linked', 'success'); setMsPickerTaskId(null); setMsPickerSearch(''); invalidateCache(); await refetchTasks() }
   }
 
   async function handleUnlinkMs(taskId) {
     const { error } = await supabase.from('tasks').update({ milestone_id: null }).eq('id', taskId).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Unlinked', 'success'); setMsPickerTaskId(null); setMsPickerSearch(''); await refetchTasks() }
+    else { showToast('Unlinked', 'success'); setMsPickerTaskId(null); setMsPickerSearch(''); invalidateCache(); await refetchTasks() }
   }
 
   async function clearDone() {
@@ -180,7 +196,7 @@ export default function ThisWeekPage() {
     if (!doneIds.length) return
     const { error } = await supabase.from('tasks').delete().in('id', doneIds).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { setTasks(prev => prev.filter(t => !t.done)); showToast('Done tasks cleared', 'success') }
+    else { setTasks(prev => prev.filter(t => !t.done)); invalidateCache(); showToast('Done tasks cleared', 'success') }
   }
 
   function toggleCluster(key) { setCollapsedClusters(prev => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s }) }
