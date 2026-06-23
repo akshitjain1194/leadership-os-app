@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { showToast } from '../components/Toast'
-import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X } from 'lucide-react'
 
 const AREA_COLORS = ['var(--accent-green)', 'var(--accent-coral)', 'var(--accent-purple)', 'var(--accent-gold)', '#185fa5', '#2d9596']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -113,6 +113,8 @@ export default function AspirationsPage() {
   const [saving, setSaving] = useState(false)
   const [deletingAspId, setDeletingAspId] = useState(null)
   const [deletingMsId, setDeletingMsId] = useState(null)
+  const [openTaskPanel, setOpenTaskPanel] = useState(null)
+  const [taskSearch, setTaskSearch] = useState('')
 
   const aspFormRef = useRef(null)
   const msFormRef = useRef(null)
@@ -122,7 +124,7 @@ export default function AspirationsPage() {
     const [aR, mR, tR, pR, arR] = await Promise.all([
       supabase.from('aspirations').select('*').eq('user_id', user.id).order('created_at'),
       supabase.from('milestones').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('tasks').select('id, milestone_id, done').eq('user_id', user.id).not('milestone_id', 'is', null),
+      supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, milestone_id').eq('user_id', user.id),
       supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
       supabase.from('areas').select('*').eq('user_id', user.id).order('name'),
     ])
@@ -134,13 +136,18 @@ export default function AspirationsPage() {
     setLoading(false)
   }
 
+  async function refetchTasks() {
+    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, milestone_id').eq('user_id', user.id)
+    setTasks(data || [])
+  }
+
   useEffect(() => { fetchAll() }, [user.id])
 
   // Click-outside + Escape
   useEffect(() => {
-    if (!aspForm && !msForm) return
+    if (!aspForm && !msForm && !openTaskPanel) return
     function onKey(e) {
-      if (e.key === 'Escape') { setAspForm(null); setMsForm(null); setFormError('') }
+      if (e.key === 'Escape') { setAspForm(null); setMsForm(null); setFormError(''); setOpenTaskPanel(null); setTaskSearch('') }
     }
     function onMouse(e) {
       if (aspForm && aspFormRef.current && !aspFormRef.current.contains(e.target)) { setAspForm(null); setFormError('') }
@@ -149,6 +156,11 @@ export default function AspirationsPage() {
     document.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onMouse)
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onMouse) }
+  }, [aspForm, msForm, openTaskPanel])
+
+  // Close task panel when any form opens
+  useEffect(() => {
+    if (aspForm || msForm) { setOpenTaskPanel(null); setTaskSearch('') }
   }, [aspForm, msForm])
 
   // Progress calculation
@@ -238,6 +250,18 @@ export default function AspirationsPage() {
     else { showToast('Milestone deleted', 'success'); setDeletingMsId(null); await fetchAll() }
   }
 
+  // ── Task linking ──
+  async function linkTask(taskId, milestoneId) {
+    const { error } = await supabase.from('tasks').update({ milestone_id: milestoneId }).eq('id', taskId).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Task linked', 'success'); await refetchTasks() }
+  }
+  async function unlinkTask(taskId) {
+    const { error } = await supabase.from('tasks').update({ milestone_id: null }).eq('id', taskId).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Task unlinked', 'success'); await refetchTasks() }
+  }
+
   function toggleAspCollapse(id) { setCollapsedAsps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleMsExpand(id) { setExpandedMs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
 
@@ -278,6 +302,78 @@ export default function AspirationsPage() {
     )
   }
 
+  // ── Task detail panel for Weekly milestones ──
+  const QUAD_BADGE = {
+    'Do Now':    { bg: 'var(--accent-coral-light)', color: 'var(--accent-coral)' },
+    'Do Soon':   { bg: 'var(--accent-gold-light)',  color: 'var(--accent-gold)' },
+    Schedule:    { bg: 'var(--accent-green-light)',  color: 'var(--accent-green)' },
+    Delegated:   { bg: 'var(--accent-purple-light)', color: 'var(--accent-purple)' },
+    Awaited:     { bg: '#deeaff', color: '#185fa5' },
+  }
+
+  function renderTaskPanel(m) {
+    const linked = tasks.filter(t => t.milestone_id === m.id)
+    const available = tasks.filter(t => !t.done && (!t.milestone_id || t.milestone_id === m.id))
+    const unlinked = available.filter(t => t.milestone_id !== m.id)
+    const filtered = taskSearch
+      ? unlinked.filter(t => t.task?.toLowerCase().includes(taskSearch.toLowerCase()))
+      : unlinked
+    const prog = Math.round(progressMap[m.id] || 0)
+
+    return (
+      <div style={{ background: 'var(--content-bg)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '14px 16px', margin: '4px 0' }}>
+        {/* Linked tasks */}
+        <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>Linked tasks</div>
+        {linked.length === 0 ? (
+          <p style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 12 }}>No tasks linked yet</p>
+        ) : (
+          <div className="flex flex-col gap-1" style={{ marginBottom: 12 }}>
+            {linked.map(t => (
+              <div key={t.id} className="flex items-center gap-2" style={{ fontSize: '12px', padding: '4px 0' }}>
+                <input type="checkbox" checked={t.done} readOnly style={{ accentColor: 'var(--accent-green)', flexShrink: 0, cursor: 'default' }} />
+                <span style={{ flex: 1, color: t.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: t.done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.task}</span>
+                {t.due_date && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', flexShrink: 0 }}>{formatDueDate(t.due_date, 'Weekly')}</span>}
+                {t.owner && <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', color: 'var(--ink-faint)', flexShrink: 0 }}>{t.owner}</span>}
+                <button onClick={() => unlinkTask(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)', flexShrink: 0 }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--danger)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}><X size={12} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Link a task */}
+        <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>Link a task</div>
+        <input value={taskSearch} onChange={e => setTaskSearch(e.target.value)} placeholder="Search tasks…" className="w-full outline-none" style={{ ...inputStyle, width: '100%', fontSize: '12px', marginBottom: 4 }} />
+        <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+          {filtered.length === 0 ? (
+            <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 0' }}>{taskSearch ? 'No matching tasks' : 'No available tasks to link'}</p>
+          ) : (
+            filtered.slice(0, 20).map(t => {
+              const qb = QUAD_BADGE[t.quadrant]
+              return (
+                <div key={t.id} onClick={() => { linkTask(t.id, m.id); setTaskSearch('') }} className="flex items-center gap-2"
+                  style={{ padding: '5px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--ink)' }}>{t.task}</span>
+                  {t.quadrant && qb && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: qb.bg, color: qb.color, flexShrink: 0, whiteSpace: 'nowrap' }}>{t.quadrant}</span>}
+                  {t.due_date && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', flexShrink: 0 }}>{formatDueDate(t.due_date, 'Weekly')}</span>}
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        {/* Progress note */}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--content-border)', fontSize: '11px', color: 'var(--ink-faint)' }}>
+          <div>Progress updates automatically as linked tasks are completed</div>
+          <div style={{ marginTop: 2 }}>Current progress: <span style={{ fontWeight: 600, color: prog > 0 ? 'var(--accent-green)' : 'var(--ink-faint)' }}>{prog}%</span></div>
+        </div>
+      </div>
+    )
+  }
+
   // ── Milestone tree ──
   function renderTree(aspirationId, parentId, horizon) {
     const items = milestones.filter(m =>
@@ -310,6 +406,8 @@ export default function AspirationsPage() {
           const dotColor = STATUS_DOT[m.status] || STATUS_DOT.Active
 
           const progColor = overdue && prog < 25 ? 'var(--danger)' : prog > 50 ? 'var(--accent-green)' : 'var(--ink-faint)'
+          const linkedTasks = m.horizon === 'Weekly' ? tasks.filter(t => t.milestone_id === m.id) : []
+          const linkedDone = linkedTasks.filter(t => t.done).length
 
           return (
             <div key={m.id}>
@@ -334,7 +432,7 @@ export default function AspirationsPage() {
                       <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 10, background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>{badge.label}</span>
                     )}
 
-                    <span title={m.text} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)' }}>{m.text}</span>
+                    <span title={m.text} onClick={m.horizon === 'Weekly' ? () => { setOpenTaskPanel(p => p === m.id ? null : m.id); setTaskSearch('') } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default' }}>{m.text}</span>
 
                     {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: overdue ? 'var(--danger)' : 'var(--ink-faint)', minWidth: 58, textAlign: 'right', flexShrink: 0 }}>{due}</span>}
 
@@ -348,6 +446,12 @@ export default function AspirationsPage() {
 
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
 
+                    {m.horizon === 'Weekly' && linkedTasks.length > 0 && (
+                      <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 8, background: linkedDone === linkedTasks.length ? 'var(--accent-green-light)' : 'var(--content-bg)', border: '1px solid var(--content-border)', color: linkedDone === linkedTasks.length ? 'var(--accent-green)' : 'var(--ink-faint)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                        {linkedTasks.length} task{linkedTasks.length !== 1 ? 's' : ''} · {linkedDone} done
+                      </span>
+                    )}
+
                     <div className="ms-actions flex items-center gap-1" style={{ flexShrink: 0 }}>
                       <button onClick={() => openEditMs(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Pencil size={14} /></button>
                       {nextH && <button onClick={() => openAddMs(m.aspiration_id, m.id, nextH)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Plus size={14} /></button>}
@@ -358,6 +462,7 @@ export default function AspirationsPage() {
               </div>
 
               {isEditing && renderMsForm()}
+              {m.horizon === 'Weekly' && openTaskPanel === m.id && renderTaskPanel(m)}
               {(isExp || hasAddChild) && nextH && renderTree(aspirationId, m.id, nextH)}
             </div>
           )
