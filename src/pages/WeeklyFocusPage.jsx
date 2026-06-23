@@ -1,0 +1,390 @@
+import { useState, useEffect, useRef } from 'react'
+import { useOutletContext, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import { showToast } from '../components/Toast'
+import { Check, ChevronDown, ChevronRight, CalendarCheck, User, X } from 'lucide-react'
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+const STATUS_BORDER = { Active: 'var(--accent-green)', 'At Risk': 'var(--warning)', Done: 'var(--ink-faint)', Paused: 'var(--content-border)' }
+const STATUS_BADGE = {
+  Active:    { bg: 'var(--accent-green-light)', color: 'var(--accent-green)' },
+  'At Risk': { bg: 'var(--accent-gold-light)',  color: 'var(--accent-gold)' },
+  Done:      { bg: 'rgba(152,152,184,0.15)',    color: 'var(--ink-faint)' },
+  Paused:    { bg: 'rgba(152,152,184,0.1)',     color: 'var(--ink-faint)' },
+}
+const QUAD_BADGE = {
+  'Do Now':  { bg: 'var(--accent-coral-light)', color: '#dc2626' },
+  'Do Soon': { bg: 'var(--accent-gold-light)',  color: 'var(--accent-gold)' },
+  Schedule:  { bg: 'var(--accent-green-light)', color: 'var(--accent-green)' },
+  Delegated: { bg: 'var(--accent-purple-light)', color: 'var(--accent-purple)' },
+  Awaited:   { bg: 'rgba(152,152,184,0.15)',    color: 'var(--ink-faint)' },
+}
+
+function todayDateStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function getInitials(name) {
+  const p = name.trim().split(/\s+/)
+  return p.length === 1 ? p[0][0].toUpperCase() : (p[0][0] + p[p.length - 1][0]).toUpperCase()
+}
+
+function formatMsDue(dateStr) {
+  if (!dateStr) return null
+  const today = todayDateStr()
+  if (dateStr === today) return { text: 'Today', color: 'var(--accent-gold)', bold: true }
+  const d = new Date(dateStr + 'T00:00:00')
+  const t = new Date(); t.setHours(0, 0, 0, 0)
+  if (d < t) {
+    const days = Math.round((t - d) / 86400000)
+    return { text: `${days} day${days !== 1 ? 's' : ''} overdue`, color: 'var(--danger)', bold: true }
+  }
+  const label = `${MONTHS[d.getMonth()]} ${d.getDate()}`
+  const in10 = new Date(t); in10.setDate(in10.getDate() + 10)
+  return { text: label, color: d <= in10 ? 'var(--accent-gold)' : 'var(--ink-faint)', bold: false }
+}
+
+function formatTaskDue(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr + 'T00:00:00')
+  const t = new Date(); t.setHours(0, 0, 0, 0)
+  return { text: `${MONTHS[d.getMonth()]} ${d.getDate()}`, color: d < t ? 'var(--danger)' : 'var(--ink-faint)' }
+}
+
+function sortMilestones(list) {
+  const today = todayDateStr()
+  const in10 = addDays(today, 10)
+  function score(m) {
+    if (!m.due_date) return 4
+    if (m.due_date < today && m.status !== 'Done') return 1
+    if (m.due_date === today) return 2
+    if (m.due_date <= in10) return 3
+    return 5
+  }
+  return [...list].sort((a, b) => {
+    const sa = score(a), sb = score(b)
+    if (sa !== sb) return sa - sb
+    if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
+    if (a.due_date) return -1
+    if (b.due_date) return 1
+    return 0
+  })
+}
+
+function SkeletonCard() {
+  return (
+    <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '14px 18px', borderLeft: '3px solid #e8e3da' }}>
+      <div style={{ width: '40%', height: 10, borderRadius: 3, background: '#e8e3da', marginBottom: 8 }} />
+      <div style={{ width: '65%', height: 14, borderRadius: 3, background: '#e8e3da', marginBottom: 12 }} />
+      <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e8e3da' }} />
+    </div>
+  )
+}
+
+export default function WeeklyFocusPage() {
+  const { user } = useOutletContext()
+  const navigate = useNavigate()
+
+  const [weeklyMs, setWeeklyMs] = useState([])
+  const [allMs, setAllMs] = useState([])
+  const [tasks, setTasks] = useState([])
+  const [people, setPeople] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const [dateFilter, setDateFilter] = useState('all')
+  const [anchorFilter, setAnchorFilter] = useState(null)
+  const [expandedCards, setExpandedCards] = useState(new Set())
+  const [linkPickerMsId, setLinkPickerMsId] = useState(null)
+  const [linkSearch, setLinkSearch] = useState('')
+
+  const linkPickerRef = useRef(null)
+
+  async function fetchAll() {
+    setLoading(true)
+    const [msR, tR, pR, allMsR] = await Promise.all([
+      supabase.from('milestones').select('id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
+      supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, starred, milestone_id').eq('user_id', user.id),
+      supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
+      supabase.from('milestones').select('id, text, horizon, parent_milestone_id, aspiration_id').eq('user_id', user.id),
+    ])
+    setWeeklyMs(msR.data || [])
+    setTasks(tR.data || [])
+    setPeople(pR.data || [])
+    setAllMs(allMsR.data || [])
+    setLoading(false)
+  }
+
+  async function refetchTasks() {
+    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, starred, milestone_id').eq('user_id', user.id)
+    if (data) setTasks(data)
+  }
+
+  useEffect(() => { fetchAll() }, [user.id])
+
+  useEffect(() => {
+    if (!linkPickerMsId) return
+    function onKey(e) { if (e.key === 'Escape') { setLinkPickerMsId(null); setLinkSearch('') } }
+    function onMouse(e) { if (linkPickerRef.current && !linkPickerRef.current.contains(e.target)) { setLinkPickerMsId(null); setLinkSearch('') } }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onMouse)
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onMouse) }
+  }, [linkPickerMsId])
+
+  async function toggleTaskDone(task) {
+    const next = !task.done
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: next } : t))
+    const { error } = await supabase.from('tasks').update({ done: next }).eq('id', task.id).eq('user_id', user.id)
+    if (error) { showToast(error.message, 'error'); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: !next } : t)) }
+  }
+
+  async function linkTask(taskId, milestoneId) {
+    const { error } = await supabase.from('tasks').update({ milestone_id: milestoneId }).eq('id', taskId).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Task linked', 'success'); setLinkPickerMsId(null); setLinkSearch(''); await refetchTasks() }
+  }
+
+  function toggleCard(id) { setExpandedCards(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+
+  function getBreadcrumb(ms) {
+    const aspText = ms.aspirations?.text
+    const parent = allMs.find(m => m.id === ms.parent_milestone_id)
+    const parts = [aspText, parent?.text].filter(Boolean)
+    return parts.map(t => t.length > 30 ? t.slice(0, 30) + '…' : t).join(' → ')
+  }
+
+  function getProgress(msId) {
+    const linked = tasks.filter(t => t.milestone_id === msId)
+    if (!linked.length) return { total: 0, done: 0, pct: 0, hasTasks: false }
+    const done = linked.filter(t => t.done).length
+    return { total: linked.length, done, pct: Math.round((done / linked.length) * 100), hasTasks: true }
+  }
+
+  // ── Filtering & sorting ──
+  const today = todayDateStr()
+  const in10 = addDays(today, 10)
+
+  let dateFiltered = weeklyMs
+  if (dateFilter === 'due10') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date >= today && m.due_date <= in10 && m.status !== 'Done')
+  if (dateFilter === 'overdue') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date < today && m.status !== 'Done')
+
+  const anchorPeople = (() => {
+    const counts = {}
+    dateFiltered.forEach(m => { if (m.anchor_person_id) counts[m.anchor_person_id] = (counts[m.anchor_person_id] || 0) + 1 })
+    return Object.entries(counts).map(([id, count]) => { const p = people.find(x => x.id === id); return p ? { ...p, count } : null }).filter(Boolean)
+  })()
+
+  const filtered = anchorFilter ? dateFiltered.filter(m => m.anchor_person_id === anchorFilter) : dateFiltered
+  const sorted = sortMilestones(filtered)
+
+  const overdueCount = weeklyMs.filter(m => m.due_date && m.due_date < today && m.status !== 'Done').length
+  const dueWeekCount = weeklyMs.filter(m => m.due_date && m.due_date >= today && m.due_date <= addDays(today, 7) && m.status !== 'Done').length
+  const doneCount = weeklyMs.filter(m => m.status === 'Done').length
+
+  const pillStyle = (active) => ({
+    padding: '5px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: active ? 500 : 400,
+    background: active ? 'var(--accent-coral)' : 'transparent', color: active ? 'white' : 'var(--ink-faint)',
+    border: `1.5px solid ${active ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap',
+  })
+
+  return (
+    <div className="page-pad flex flex-col gap-5">
+      {/* Header */}
+      <div>
+        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '28px', color: 'var(--ink)', marginBottom: 4 }}>Weekly Focus</h1>
+        <p style={{ fontSize: '14px', color: 'var(--ink-faint)' }}>Your weekly milestones and their tasks</p>
+      </div>
+
+      {/* Summary row */}
+      {!loading && weeklyMs.length > 0 && (
+        <div className="flex gap-6 flex-wrap" style={{ marginBottom: 4 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--ink-faint)' }}>{weeklyMs.length} milestone{weeklyMs.length !== 1 ? 's' : ''}</span>
+          {dueWeekCount > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent-gold)' }}>{dueWeekCount} due this week</span>}
+          {overdueCount > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--danger)' }}>{overdueCount} overdue</span>}
+          {doneCount > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent-green)' }}>{doneCount} done</span>}
+        </div>
+      )}
+
+      {/* Filter bar */}
+      {!loading && weeklyMs.length > 0 && (
+        <div className="flex gap-3 flex-wrap items-center" style={{ marginBottom: 8 }}>
+          <div className="flex gap-2">
+            {[['all', 'All'], ['due10', 'Due in 10 days'], ['overdue', 'Overdue']].map(([k, l]) => (
+              <button key={k} onClick={() => { setDateFilter(k); setAnchorFilter(null) }} style={pillStyle(dateFilter === k)}>{l}</button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <User size={14} style={{ color: 'var(--ink-faint)' }} />
+            <select value={anchorFilter || ''} onChange={e => setAnchorFilter(e.target.value || null)}
+              style={{ background: 'white', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', minWidth: 180, fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--ink)', outline: 'none', cursor: 'pointer' }}>
+              <option value="">All anchors</option>
+              {anchorPeople.map(p => <option key={p.id} value={p.id}>{p.name} ({p.count})</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && <div className="flex flex-col gap-3">{[1, 2, 3].map(i => <SkeletonCard key={i} />)}</div>}
+
+      {/* Empty: no milestones at all */}
+      {!loading && weeklyMs.length === 0 && (
+        <div className="flex flex-col items-center gap-4 py-16 px-6 text-center" style={{ borderRadius: 'var(--radius-lg)', background: 'var(--content-bg-card)', border: '1.5px dashed var(--content-border-strong)' }}>
+          <CalendarCheck size={48} style={{ color: 'var(--ink-faint)', opacity: 0.5 }} />
+          <p style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', color: 'var(--ink)' }}>No weekly milestones yet</p>
+          <p style={{ fontSize: '14px', color: 'var(--ink-faint)', lineHeight: 1.6, maxWidth: 400 }}>Break down your aspirations into weekly milestones on the Aspirations page</p>
+          <button onClick={() => navigate('/aspirations')} style={{ marginTop: 4, padding: '9px 24px', borderRadius: 'var(--radius-sm)', background: 'var(--ink)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>→ Go to Aspirations</button>
+        </div>
+      )}
+
+      {/* Empty: no results for filter */}
+      {!loading && weeklyMs.length > 0 && sorted.length === 0 && (
+        <div className="flex flex-col items-center gap-3 py-12" style={{ color: 'var(--ink-faint)' }}>
+          <p style={{ fontSize: '14px' }}>No milestones match this filter</p>
+          <button onClick={() => { setDateFilter('all'); setAnchorFilter(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-coral)', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, textDecoration: 'underline' }}>Clear filters</button>
+        </div>
+      )}
+
+      {/* Milestone cards */}
+      {!loading && sorted.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {sorted.map(ms => {
+            const prog = getProgress(ms.id)
+            const due = formatMsDue(ms.due_date)
+            const isOverdue = ms.due_date && ms.due_date < today && ms.status !== 'Done'
+            const anchor = ms.anchor_person_id ? people.find(p => p.id === ms.anchor_person_id) : null
+            const sb = STATUS_BADGE[ms.status] || STATUS_BADGE.Active
+            const borderCol = STATUS_BORDER[ms.status] || STATUS_BORDER.Active
+            const breadcrumb = getBreadcrumb(ms)
+            const isExpanded = expandedCards.has(ms.id)
+            const linkedTasks = tasks.filter(t => t.milestone_id === ms.id)
+            const isDone = ms.status === 'Done'
+            const isAtRisk = ms.status === 'At Risk'
+
+            let cardBg = 'var(--content-bg-card)'
+            if (isAtRisk) cardBg = 'rgba(217,119,6,0.03)'
+            if (isOverdue) cardBg = 'rgba(220,38,38,0.03)'
+
+            const progFill = prog.pct > 50 ? 'var(--accent-green)' : prog.pct > 0 ? 'var(--accent-gold)' : 'var(--ink-faint)'
+
+            return (
+              <div key={ms.id} style={{ background: cardBg, border: '1px solid var(--content-border)', borderLeft: `3px solid ${borderCol}`, borderRadius: 'var(--radius-lg)', overflow: 'hidden', opacity: isDone ? 0.6 : 1, transition: 'opacity 150ms ease' }}>
+                {/* Header */}
+                <div className="flex gap-3" style={{ padding: '14px 18px', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {breadcrumb && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{breadcrumb}</div>}
+                    <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4 }}>{ms.text}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5" style={{ flexShrink: 0 }}>
+                    {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: due.color, fontWeight: due.bold ? 500 : 400 }}>{due.text}</span>}
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '1px 7px', borderRadius: 10, background: sb.bg, color: sb.color }}>{ms.status}</span>
+                    {anchor && (
+                      <div className="flex items-center gap-1.5">
+                        <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>
+                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--ink-faint)' }}>{anchor.name}</span>
+                      </div>
+                    )}
+                    {linkedTasks.length > 0 ? (
+                      <button onClick={() => toggleCard(ms.id)} className="flex items-center gap-1" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>
+                        {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        {linkedTasks.length} task{linkedTasks.length !== 1 ? 's' : ''}
+                      </button>
+                    ) : (
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>No tasks</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress */}
+                <div style={{ padding: '0 18px 10px' }}>
+                  {prog.hasTasks ? (
+                    <>
+                      <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)' }}>Progress</span>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)' }}>{prog.pct}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'var(--content-border)', overflow: 'hidden' }}>
+                        <div style={{ width: `${prog.pct}%`, height: '100%', background: progFill, borderRadius: 2, transition: 'width 400ms ease' }} />
+                      </div>
+                    </>
+                  ) : (
+                    <p style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No tasks linked — link tasks to track progress</p>
+                  )}
+                </div>
+
+                {/* Expanded tasks */}
+                {isExpanded && (
+                  <div style={{ borderTop: '1px solid var(--content-border)', padding: '8px 0' }}>
+                    {linkedTasks.map((t, idx) => {
+                      const td = formatTaskDue(t.due_date)
+                      const qb = QUAD_BADGE[t.quadrant]
+                      return (
+                        <div key={t.id}
+                          style={{ display: 'flex', alignItems: 'center', padding: '8px 18px', gap: 10, transition: 'background 150ms', borderBottom: idx < linkedTasks.length - 1 ? '1px solid rgba(232,227,218,0.4)' : 'none' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                          <button onClick={() => toggleTaskDone(t)}
+                            style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${t.done ? 'var(--accent-green)' : 'var(--content-border-strong)'}`, background: t.done ? 'var(--accent-green)' : 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                            {t.done && <Check size={9} color="white" strokeWidth={3} />}
+                          </button>
+                          <span style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', lineHeight: 1.4, color: t.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: t.done ? 'line-through' : 'none' }}>{t.task}</span>
+                          {td && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: td.color, flexShrink: 0 }}>{td.text}</span>}
+                          {t.owner && anchor && t.owner !== anchor.name && (
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 8px', borderRadius: 20, background: 'var(--content-bg)', border: '1px solid var(--content-border)', color: 'var(--ink-soft)', flexShrink: 0 }}>{t.owner}</span>
+                          )}
+                          {t.quadrant && qb && (
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 5px', borderRadius: 8, background: qb.bg, color: qb.color, flexShrink: 0, whiteSpace: 'nowrap' }}>{t.quadrant}</span>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {/* Link task picker */}
+                    {linkPickerMsId === ms.id ? (
+                      <div ref={linkPickerRef} style={{ padding: '8px 18px' }}>
+                        <input autoFocus value={linkSearch} onChange={e => setLinkSearch(e.target.value)} placeholder="Search tasks to link…" className="w-full outline-none"
+                          style={{ border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: '12px', fontFamily: 'var(--font-sans)', background: 'var(--content-bg-card)', color: 'var(--ink)', marginBottom: 4 }} />
+                        <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                          {(() => {
+                            const avail = tasks.filter(t => !t.milestone_id && !t.done)
+                            const show = linkSearch ? avail.filter(t => t.task?.toLowerCase().includes(linkSearch.toLowerCase())) : avail
+                            if (!show.length) return <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 0' }}>{linkSearch ? 'No matching tasks' : 'No unlinked tasks available'}</p>
+                            return show.slice(0, 15).map(t => {
+                              const qb = QUAD_BADGE[t.quadrant]
+                              return (
+                                <div key={t.id} onClick={() => linkTask(t.id, ms.id)} className="flex items-center gap-2"
+                                  style={{ padding: '5px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }}
+                                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                                  <span style={{ flex: 1, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.task}</span>
+                                  {t.quadrant && qb && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: qb.bg, color: qb.color, flexShrink: 0 }}>{t.quadrant}</span>}
+                                  {t.due_date && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', flexShrink: 0 }}>{`${MONTHS[new Date(t.due_date + 'T00:00:00').getMonth()]} ${new Date(t.due_date + 'T00:00:00').getDate()}`}</span>}
+                                </div>
+                              )
+                            })
+                          })()}
+                        </div>
+                        <button onClick={() => { setLinkPickerMsId(null); setLinkSearch('') }} style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--ink-faint)', fontFamily: 'var(--font-sans)', padding: 0 }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '4px 18px 6px' }}>
+                        <button onClick={() => { setLinkPickerMsId(ms.id); setLinkSearch('') }} style={{ background: 'none', border: '1px dashed var(--content-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: '5px 12px', fontSize: '12px', color: 'var(--ink-faint)', fontFamily: 'var(--font-sans)' }}>+ Link an existing task</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
