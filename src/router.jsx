@@ -5,6 +5,7 @@ import CapturePage      from './pages/CapturePage'
 import ThisWeekPage     from './pages/ThisWeekPage'
 import ReflectionLogPage from './pages/ReflectionLogPage'
 import DashboardPage    from './pages/DashboardPage'
+import PeoplePage       from './pages/PeoplePage'
 
 export function buildRouter(user) {
   return createBrowserRouter([
@@ -17,6 +18,7 @@ export function buildRouter(user) {
         { path: 'this-week',      element: <ThisWeekPage /> },
         { path: 'reflection-log', element: <ReflectionLogPage /> },
         { path: 'dashboard',      element: <DashboardPage /> },
+        { path: 'strategic/people', element: <PeoplePage /> },
         { path: '*',              element: <ComingSoon /> },
       ],
     },
