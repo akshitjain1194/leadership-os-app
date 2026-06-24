@@ -1,16 +1,6 @@
-export function findSelfPersonId(people) {
-  const self = people.find(p => p.name.toLowerCase().includes('akshit'))
-  return self?.id ?? null
-}
-
-export function findRajeshPersonId(people) {
-  const rajesh = people.find(p => p.name.toLowerCase().includes('rajesh'))
-  return rajesh?.id ?? null
-}
-
-export function getQuadrant(owner_id, due_date, selfPersonId, rajeshPersonId) {
+export function getQuadrant(owner_id, due_date, selfPersonId, supervisorPersonId) {
   if (!owner_id) return 'Schedule'
-  if (owner_id === rajeshPersonId) return 'Awaited'
+  if (owner_id === supervisorPersonId) return 'Awaited'
   if (owner_id === selfPersonId) {
     if (!due_date) return 'Schedule'
     const today = new Date()

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Star, Check, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { getQuadrant, getOwnerName, findSelfPersonId, findRajeshPersonId } from '../lib/taskUtils'
+import { getQuadrant, getOwnerName } from '../lib/taskUtils'
+import { useUserProfile } from '../contexts/UserProfileContext'
 import { showToast } from '../components/Toast'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -86,7 +87,7 @@ export default function ThisWeekPage() {
     const [tR, mR, pR] = await Promise.all([
       supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).eq('done', false).order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('milestones').select('id, text, aspiration_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
-      supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
+      supabase.from('people').select('id, name').order('name'),
     ])
     const fresh = { tasks: tR.data || [], milestones: mR.data || [], people: pR.data || [] }
     cachedData = fresh; cacheTime = Date.now()
@@ -141,19 +142,18 @@ export default function ThisWeekPage() {
   }
   function closeEditPanel() { setEditForm(null); setEditMsSearch(''); setEditMsOpen(false) }
 
-  const selfPersonId = findSelfPersonId(people)
-  const rajeshPersonId = findRajeshPersonId(people)
+  const { selfPersonId, supervisorPersonId, selfName: profileSelfName } = useUserProfile()
 
   const liveTasks = useMemo(() =>
-    tasks.map(t => ({ ...t, quadrant: getQuadrant(t.owner_id, t.due_date, selfPersonId, rajeshPersonId) })),
-    [tasks, selfPersonId, rajeshPersonId]
+    tasks.map(t => ({ ...t, quadrant: getQuadrant(t.owner_id, t.due_date, selfPersonId, supervisorPersonId) })),
+    [tasks, selfPersonId, supervisorPersonId]
   )
 
   async function saveEdit() {
     if (!editForm || !editForm.task.trim()) return
     const selectedOwnerId = editForm.owner_id || null
     const ownerName = selectedOwnerId ? (people.find(p => p.id === selectedOwnerId)?.name || null) : null
-    const quadrant = getQuadrant(selectedOwnerId, editForm.due_date || null, selfPersonId, rajeshPersonId)
+    const quadrant = getQuadrant(selectedOwnerId, editForm.due_date || null, selfPersonId, supervisorPersonId)
     const { error } = await supabase.from('tasks').update({
       task: editForm.task.trim(), due_date: editForm.due_date || null, owner_id: selectedOwnerId, owner: ownerName,
       milestone_id: editForm.milestone_id || null, starred: editForm.starred, quadrant,
@@ -178,8 +178,8 @@ export default function ThisWeekPage() {
   async function handleQuickAdd(quadrant) {
     const text = (quickAdd[quadrant] || '').trim()
     if (!text) return
-    const selfName = people.find(p => p.id === selfPersonId)?.name || 'Akshit'
-    const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text, quadrant, owner_id: selfPersonId, owner: selfName, due_date: quadrant === 'Do Now' ? todayStr : null, done: false, starred: false })
+    const ownerName = profileSelfName || people.find(p => p.id === selfPersonId)?.name || ''
+    const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text, quadrant, owner_id: selfPersonId, owner: ownerName, due_date: quadrant === 'Do Now' ? todayStr : null, done: false, starred: false })
     if (error) showToast(error.message, 'error')
     else { setQuickAdd(p => ({ ...p, [quadrant]: '' })); invalidateCache(); await refetchTasks() }
   }

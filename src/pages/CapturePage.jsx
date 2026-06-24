@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { format, isAfter, isBefore, subDays, subHours } from 'date-fns'
 import { supabase } from '../lib/supabase'
-import { getQuadrant, findSelfPersonId, findRajeshPersonId } from '../lib/taskUtils'
+import { getQuadrant } from '../lib/taskUtils'
+import { useUserProfile } from '../contexts/UserProfileContext'
 import { showToast } from '../components/Toast'
 import EmptyState from '../components/EmptyState'
 
@@ -12,7 +13,7 @@ const QUADRANT_KEYS = ['Do Now', 'Do Soon', 'Schedule', 'Delegated', 'Awaited']
 
 // ── IdeaCard ──────────────────────────────────────────────────────────────────
 
-function IdeaCard({ idea, people, peopleLoading, selfPersonId, rajeshPersonId, onConvert, onRelease }) {
+function IdeaCard({ idea, people, peopleLoading, selfPersonId, supervisorPersonId, onConvert, onRelease }) {
   const [converting, setConverting] = useState(false)
   const [convOwnerId, setConvOwnerId] = useState('')
   const [convDate, setConvDate]     = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -22,7 +23,7 @@ function IdeaCard({ idea, people, peopleLoading, selfPersonId, rajeshPersonId, o
 
   async function doConvert() {
     const person = convOwnerId ? people.find(p => p.id === convOwnerId) : null
-    await onConvert(idea, convOwnerId, person?.name || '', convDate, selfPersonId, rajeshPersonId)
+    await onConvert(idea, convOwnerId, person?.name || '', convDate, selfPersonId, supervisorPersonId)
     setConverting(false)
   }
 
@@ -160,7 +161,6 @@ export default function CapturePage() {
     const { data } = await supabase
       .from('people')
       .select('id, name')
-      .eq('user_id', user.id)
       .order('name')
     setPeople(data || [])
     setPeopleLoading(false)
@@ -191,8 +191,7 @@ export default function CapturePage() {
     setTaskCounts(counts)
   }
 
-  const selfPersonId = findSelfPersonId(people)
-  const rajeshPersonId = findRajeshPersonId(people)
+  const { selfPersonId, supervisorPersonId } = useUserProfile()
 
   async function handleCapture() {
     if (!text.trim()) return
@@ -206,7 +205,7 @@ export default function CapturePage() {
       } else {
         const person = people.find(p => p.id === ownerId)
         const ownerName = person?.name || ''
-        const quadrant = getQuadrant(ownerId, date || null, selfPersonId, rajeshPersonId)
+        const quadrant = getQuadrant(ownerId, date || null, selfPersonId, supervisorPersonId)
         const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text.trim(), owner_id: ownerId, owner: ownerName, due_date: date || null, quadrant, done: false, starred: false })
         if (error) throw error
         setCaptureConfirm(`Routed to ${quadrant}`)
@@ -221,9 +220,9 @@ export default function CapturePage() {
     setSaving(false)
   }
 
-  async function handleConvert(idea, convOwnerId, convOwnerName, convDate, selfId, rajeshId) {
+  async function handleConvert(idea, convOwnerId, convOwnerName, convDate, selfId, supId) {
     try {
-      const quadrant = getQuadrant(convOwnerId || null, convDate || null, selfId, rajeshId)
+      const quadrant = getQuadrant(convOwnerId || null, convDate || null, selfId, supId)
       const { error: taskErr } = await supabase.from('tasks').insert({ user_id: user.id, task: idea.text, owner_id: convOwnerId || null, owner: convOwnerName || null, due_date: convDate || null, quadrant, done: false, starred: false })
       if (taskErr) throw taskErr
       const { error: ideaErr } = await supabase.from('ideas').update({ status: 'Converted' }).eq('id', idea.id).eq('user_id', user.id)
@@ -425,7 +424,7 @@ export default function CapturePage() {
         {!ideasLoading && !ideasError && filteredIdeas.length > 0 && (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
             {filteredIdeas.map(i => (
-              <IdeaCard key={i.id} idea={i} people={people} peopleLoading={peopleLoading} selfPersonId={selfPersonId} rajeshPersonId={rajeshPersonId} onConvert={handleConvert} onRelease={handleRelease} />
+              <IdeaCard key={i.id} idea={i} people={people} peopleLoading={peopleLoading} selfPersonId={selfPersonId} supervisorPersonId={supervisorPersonId} onConvert={handleConvert} onRelease={handleRelease} />
             ))}
           </div>
         )}

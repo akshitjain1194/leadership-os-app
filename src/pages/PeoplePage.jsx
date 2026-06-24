@@ -50,7 +50,7 @@ function SkeletonCard() {
   )
 }
 
-function PersonCard({ person, roster, onEdit, onDelete }) {
+function PersonCard({ person, roster, onEdit, onDelete, isOwner }) {
   const [expanded, setExpanded] = useState(false)
   const aspirations = roster.filter(r => r.person_name === person.name)
 
@@ -75,7 +75,10 @@ function PersonCard({ person, roster, onEdit, onDelete }) {
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ink)' }}>{person.name}</div>
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ink)' }}>{person.name}</span>
+            {!isOwner && <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)', padding: '1px 5px', borderRadius: 8, background: 'var(--content-bg)', border: '1px solid var(--content-border)' }}>shared</span>}
+          </div>
           {profileParts.length > 0 ? (
             <div style={{ fontSize: '11.5px', color: 'var(--ink-faint)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
               {profileParts.join(' · ')}
@@ -87,7 +90,7 @@ function PersonCard({ person, roster, onEdit, onDelete }) {
           )}
         </div>
 
-        <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+        {isOwner && <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
           <button
             onClick={() => onEdit(person)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', color: 'var(--ink-faint)', borderRadius: 'var(--radius-sm)' }}
@@ -104,7 +107,7 @@ function PersonCard({ person, roster, onEdit, onDelete }) {
           >
             <Trash2 size={14} />
           </button>
-        </div>
+        </div>}
       </div>
 
       {aspirations.length > 0 && (
@@ -156,7 +159,7 @@ export default function PeoplePage() {
   async function loadData() {
     setLoading(true)
     const [peopleRes, rosterRes] = await Promise.all([
-      supabase.from('people').select('*').eq('user_id', user.id).order('name'),
+      supabase.from('people').select('*').order('name'),
       supabase.from('aspiration_roster').select('*').eq('user_id', user.id),
     ])
     if (peopleRes.error) showToast(peopleRes.error.message, 'error')
@@ -364,6 +367,7 @@ export default function PeoplePage() {
               roster={roster}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              isOwner={person.user_id === user.id}
             />
           ))}
         </div>

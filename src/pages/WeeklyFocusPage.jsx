@@ -120,9 +120,9 @@ export default function WeeklyFocusPage() {
     const [msR, tR, pR, allMsR, arR] = await Promise.all([
       supabase.from('milestones').select('id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(id, text, area_id)').eq('user_id', user.id).eq('horizon', 'Weekly'),
       supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id),
-      supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
+      supabase.from('people').select('id, name').order('name'),
       supabase.from('milestones').select('id, text, horizon, parent_milestone_id, aspiration_id').eq('user_id', user.id),
-      supabase.from('areas').select('id, name').eq('user_id', user.id).order('name'),
+      supabase.from('areas').select('id, name').order('name'),
     ])
     setWeeklyMs(msR.data || [])
     setTasks(tR.data || [])

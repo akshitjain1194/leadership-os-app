@@ -134,8 +134,8 @@ export default function AspirationsPage() {
       supabase.from('aspirations').select('*').eq('user_id', user.id).order('created_at'),
       supabase.from('milestones').select('*').eq('user_id', user.id).order('created_at'),
       supabase.from('tasks').select('id, done, milestone_id').eq('user_id', user.id).not('milestone_id', 'is', null),
-      supabase.from('people').select('id, name').eq('user_id', user.id).order('name'),
-      supabase.from('areas').select('*').eq('user_id', user.id).order('name'),
+      supabase.from('people').select('id, name').order('name'),
+      supabase.from('areas').select('*').order('name'),
     ])
     const fresh = { aspirations: aR.data || [], milestones: mR.data || [], tasks: tR.data || [], people: pR.data || [], areas: arR.data || [] }
     cachedData = fresh; cacheTime = Date.now()

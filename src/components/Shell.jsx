@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { LogOut, Menu, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useUserProfile } from '../contexts/UserProfileContext'
 
 // ── section membership ────────────────────────────────────────────────────────
 
@@ -105,8 +106,11 @@ export default function Shell({ user }) {
   const location      = useLocation()
   const activeSection = getActiveSection(location.pathname)
 
-  const email    = user?.email ?? ''
-  const initials = email ? email[0].toUpperCase() : '?'
+  const { selfName } = useUserProfile()
+  const displayName = selfName || user?.email || ''
+  const initials = selfName
+    ? selfName.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2)
+    : (user?.email ? user.email[0].toUpperCase() : '?')
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -163,7 +167,7 @@ export default function Shell({ user }) {
             className="hidden lg:block"
             style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'rgba(255,255,255,0.3)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
-            {email}
+            {displayName}
           </span>
           <button
             onClick={handleSignOut}
