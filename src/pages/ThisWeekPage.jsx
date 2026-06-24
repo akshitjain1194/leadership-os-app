@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Star, Check, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -101,7 +101,7 @@ export default function ThisWeekPage() {
     if (data) { setTasks(data); if (cachedData) { cachedData = { ...cachedData, tasks: data }; cacheTime = Date.now() } }
   }
 
-  useEffect(() => { fetchAll() }, [user.id])
+  useEffect(() => { invalidateCache(); fetchAll() }, [user.id])
 
   // Escape / click-outside for milestone picker + edit panel
   useEffect(() => {
@@ -143,6 +143,11 @@ export default function ThisWeekPage() {
 
   const selfPersonId = findSelfPersonId(people)
   const rajeshPersonId = findRajeshPersonId(people)
+
+  const liveTasks = useMemo(() =>
+    tasks.map(t => ({ ...t, quadrant: getQuadrant(t.owner_id, t.due_date, selfPersonId, rajeshPersonId) })),
+    [tasks, selfPersonId, rajeshPersonId]
+  )
 
   async function saveEdit() {
     if (!editForm || !editForm.task.trim()) return
@@ -202,9 +207,9 @@ export default function ThisWeekPage() {
   function toggleCluster(key) { setCollapsedClusters(prev => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s }) }
 
   // ── Computed ──
-  const activeTasks = tasks.filter(t => !t.done)
-  const doneTasks = tasks.filter(t => t.done)
-  const starred = tasks.filter(t => t.starred && !t.done)
+  const activeTasks = liveTasks.filter(t => !t.done)
+  const doneTasks = liveTasks.filter(t => t.done)
+  const starred = liveTasks.filter(t => t.starred && !t.done)
 
   // ── Milestone picker ──
   function renderMsPicker(task) {
