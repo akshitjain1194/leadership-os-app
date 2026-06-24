@@ -252,17 +252,29 @@ export default function AspirationsPage() {
     if (!msForm.text.trim()) return
     setSaving(true)
     const fields = { text: msForm.text.trim(), due_date: msForm.due_date || null, anchor_person_id: msForm.anchor_person_id || null, status: msForm.status }
-    const { error } = msForm.id
-      ? await supabase.from('milestones').update(fields).eq('id', msForm.id).eq('user_id', user.id)
-      : await supabase.from('milestones').insert({ ...fields, user_id: user.id, aspiration_id: msForm.aspirationId, parent_milestone_id: msForm.parentMilestoneId || null, horizon: msForm.horizon })
-    if (error) showToast(error.message, 'error')
-    else { showToast(msForm.id ? 'Milestone updated' : 'Milestone added', 'success'); setMsForm(null) }
-    await fetchAll(); setSaving(false)
+    if (msForm.id) {
+      const { error } = await supabase.from('milestones').update(fields).eq('id', msForm.id).eq('user_id', user.id)
+      if (error) { showToast(error.message, 'error'); setSaving(false); return }
+      setMilestones(prev => prev.map(m => m.id === msForm.id ? { ...m, ...fields } : m))
+      showToast('Milestone updated', 'success')
+    } else {
+      const { data: row, error } = await supabase.from('milestones').insert({ ...fields, user_id: user.id, aspiration_id: msForm.aspirationId, parent_milestone_id: msForm.parentMilestoneId || null, horizon: msForm.horizon }).select().single()
+      if (error) { showToast(error.message, 'error'); setSaving(false); return }
+      setMilestones(prev => [...prev, row])
+      showToast('Milestone added', 'success')
+    }
+    setMsForm(null); setSaving(false)
+    invalidateCache(); fetchAll()
   }
   async function deleteMs(id) {
     const { error } = await supabase.from('milestones').delete().eq('id', id).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
-    else { showToast('Milestone deleted', 'success'); setDeletingMsId(null); invalidateCache(); await fetchAll() }
+    else {
+      setMilestones(prev => prev.filter(m => m.id !== id))
+      setDeletingMsId(null)
+      showToast('Milestone deleted', 'success')
+      invalidateCache(); fetchAll()
+    }
   }
 
   // ── Task linking ──
