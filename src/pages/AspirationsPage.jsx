@@ -125,17 +125,6 @@ export default function AspirationsPage() {
       supabase.from('areas').select('*').order('name'),
     ])
     const fresh = { aspirations: aR.data || [], milestones: mR.data || [], tasks: tR.data || [], people: pR.data || [], areas: arR.data || [] }
-    console.log('[DEBUG] All aspirations fetched:', fresh.aspirations.length, fresh.aspirations.map(a => ({ id: a.id, text: a.text?.substring(0, 30), user_id: a.user_id })))
-    console.log('[DEBUG] Current user.id:', user.id)
-    console.log('[DEBUG] Own aspirations:', fresh.aspirations.filter(a => a.user_id === user.id).length)
-    console.log('[DEBUG] Shared aspirations:', fresh.aspirations.filter(a => a.user_id !== user.id).length)
-    console.log('[DEBUG] selfPersonId:', selfPersonId)
-    // Check roster for current user's person
-    if (selfPersonId) {
-      supabase.from('aspiration_roster').select('*').eq('person_id', selfPersonId).then(({ data: rosterCheck }) => {
-        console.log('[DEBUG] Roster entries for selfPersonId:', rosterCheck)
-      })
-    }
     cachedData = fresh; cacheTime = Date.now()
     applyData(fresh); setLoading(false)
   }
