@@ -106,14 +106,14 @@ export default function Shell({ user }) {
   const location      = useLocation()
   const activeSection = getActiveSection(location.pathname)
 
-  const { selfName } = useUserProfile()
+  const { selfName, signOut } = useUserProfile()
   const displayName = selfName || user?.email || ''
   const initials = selfName
     ? selfName.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2)
     : (user?.email ? user.email[0].toUpperCase() : '?')
 
   async function handleSignOut() {
-    await supabase.auth.signOut()
+    await signOut()
     navigate('/')
   }
 
