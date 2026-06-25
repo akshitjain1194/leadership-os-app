@@ -116,9 +116,9 @@ export default function AspirationsPage() {
     const showSkeleton = !cachedData
     if (showSkeleton) setLoading(true)
     const [aR, mR, tR, pR, arR] = await Promise.all([
-      supabase.from('aspirations').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('milestones').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('tasks').select('id, done, milestone_id').eq('user_id', user.id).not('milestone_id', 'is', null),
+      supabase.from('aspirations').select('*').order('created_at'),
+      supabase.from('milestones').select('*').order('created_at'),
+      supabase.from('tasks').select('id, done, milestone_id').not('milestone_id', 'is', null),
       supabase.from('people').select('id, name').order('name'),
       supabase.from('areas').select('*').order('name'),
     ])
@@ -130,14 +130,14 @@ export default function AspirationsPage() {
   function invalidateCache() { cachedData = null; cacheTime = null }
 
   async function refetchTasks() {
-    const { data } = await supabase.from('tasks').select('id, done, milestone_id').eq('user_id', user.id).not('milestone_id', 'is', null)
+    const { data } = await supabase.from('tasks').select('id, done, milestone_id').not('milestone_id', 'is', null)
     const t = data || []
     setTasks(t)
     if (cachedData) { cachedData = { ...cachedData, tasks: t }; cacheTime = Date.now() }
   }
 
   async function fetchTaskPanelTasks() {
-    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, milestone_id').eq('user_id', user.id)
+    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, quadrant, milestone_id')
     setTaskPanelTasks(data || [])
   }
 
@@ -305,14 +305,17 @@ export default function AspirationsPage() {
   }
 
   // ── Grouped aspirations ──
+  const ownAspirations = useMemo(() => aspirations.filter(a => a.user_id === user.id), [aspirations, user.id])
+  const sharedAspirations = useMemo(() => aspirations.filter(a => a.user_id !== user.id), [aspirations, user.id])
+
   const areaGroups = useMemo(() => {
     const byArea = {}
     const ungrouped = []
-    aspirations.forEach(a => { if (a.area_id) { (byArea[a.area_id] ||= []).push(a) } else ungrouped.push(a) })
+    ownAspirations.forEach(a => { if (a.area_id) { (byArea[a.area_id] ||= []).push(a) } else ungrouped.push(a) })
     const sorted = [...areas].sort((a, b) => a.name.localeCompare(b.name))
     const groups = sorted.filter(a => byArea[a.id]?.length).map(a => ({ area: a, asps: byArea[a.id] }))
     return { groups, ungrouped }
-  }, [aspirations, areas])
+  }, [ownAspirations, areas])
 
   const msIndex = useMemo(() => {
     const byParent = {}
@@ -523,7 +526,8 @@ export default function AspirationsPage() {
   function renderCard(a) {
     const areaObj = areas.find(ar => ar.id === a.area_id)
     const aName = areaObj?.name || null
-    const borderCol = getAreaColor(aName)
+    const isSharedAsp = a.user_id !== user.id
+    const borderCol = isSharedAsp ? '#7b5ea7' : getAreaColor(aName)
     const prog = Math.round(progressMap['a-' + a.id] || 0)
     const isExpanded = expandedAsps.has(a.id)
     const subtitle = [aName, a.start_date && a.end_date ? (() => { const s = new Date(a.start_date + 'T00:00:00'), e = new Date(a.end_date + 'T00:00:00'); return `${MONTHS[s.getMonth()]} ${s.getFullYear()} → ${MONTHS[e.getMonth()]} ${e.getFullYear()}` })() : null].filter(Boolean).join(' · ')
@@ -557,8 +561,9 @@ export default function AspirationsPage() {
                     <div style={{ width: `${prog}%`, height: '100%', background: 'var(--accent-green)', borderRadius: 2, transition: 'width 400ms ease' }} />
                   </div>
                 )}
-                <button onClick={e => { e.stopPropagation(); openEditAsp(a) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Pencil size={13} /></button>
-                <button onClick={e => { e.stopPropagation(); setDeletingAspId(a.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Trash2 size={13} /></button>
+                {isSharedAsp && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7' }}>shared</span>}
+                {!isSharedAsp && <button onClick={e => { e.stopPropagation(); openEditAsp(a) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Pencil size={13} /></button>}
+                {!isSharedAsp && <button onClick={e => { e.stopPropagation(); setDeletingAspId(a.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Trash2 size={13} /></button>}
                 <span style={{ color: 'var(--ink-faint)', display: 'flex', transition: 'transform 150ms' }}>{isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
               </div>
             </div>
@@ -566,7 +571,8 @@ export default function AspirationsPage() {
             {/* Body — only rendered when expanded */}
             {isExpanded && (
               <div style={{ borderTop: '1px solid var(--content-border)', padding: '10px 0' }}>
-                {/* Area reassign dropdown */}
+                {/* Area reassign dropdown — own only */}
+                {!isSharedAsp && (
                 <div style={{ padding: '0 18px 6px', position: 'relative', display: 'inline-block' }}>
                   <div onClick={() => setAreaDropdownAspId(areaDropdownAspId === a.id ? null : a.id)} style={{ cursor: 'pointer' }} className="flex items-center gap-1">
                     <span style={{ width: 8, height: 8, borderRadius: 2, background: borderCol, flexShrink: 0 }} />
@@ -584,15 +590,16 @@ export default function AspirationsPage() {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Timeline tree */}
                 {renderTree(a.id, null, 'Annual')}
 
-                {/* Empty + add button */}
-                {!hasAnn && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId) && (
+                {/* Empty + add button — own only */}
+                {!isSharedAsp && !hasAnn && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId) && (
                   <p style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic', padding: '6px 18px' }}>No milestones yet — add an Annual Milestone to start</p>
                 )}
-                {!(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId && msForm.horizon === 'Annual') && (
+                {!isSharedAsp && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId && msForm.horizon === 'Annual') && (
                   <div style={{ padding: '4px 18px 2px', marginLeft: 72 }}>
                     <button onClick={() => openAddMs(a.id, null, 'Annual')} className="flex items-center gap-1" style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-faint)', border: '1px dashed var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
                       <Plus size={11} /> Annual milestone
@@ -746,8 +753,20 @@ export default function AspirationsPage() {
         </div>
       )}
 
-      {/* Grouped aspiration cards */}
-      {!loading && aspirations.length > 0 && (
+      {/* Shared aspirations */}
+      {!loading && sharedAspirations.length > 0 && !areaFilter && (
+        <div>
+          <div className="flex items-center gap-2" style={{ marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--content-border)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7b5ea7', flexShrink: 0 }} />
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: '#7b5ea7' }}>Shared with me</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>({sharedAspirations.length})</span>
+          </div>
+          <div className="flex flex-col" style={{ gap: 8 }}>{sharedAspirations.map(a => renderCard(a))}</div>
+        </div>
+      )}
+
+      {/* Own aspiration cards grouped by area */}
+      {!loading && ownAspirations.length > 0 && (
         <div>
           {areaGroups.groups
             .filter(({ area }) => !areaFilter || area.id === areaFilter)

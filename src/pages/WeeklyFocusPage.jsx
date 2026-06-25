@@ -118,10 +118,10 @@ export default function WeeklyFocusPage() {
   async function fetchAll() {
     setLoading(true)
     const [msR, tR, pR, allMsR, arR] = await Promise.all([
-      supabase.from('milestones').select('id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(id, text, area_id)').eq('user_id', user.id).eq('horizon', 'Weekly'),
-      supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id),
+      supabase.from('milestones').select('id, user_id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(id, text, area_id)').eq('horizon', 'Weekly'),
+      supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id'),
       supabase.from('people').select('id, name').order('name'),
-      supabase.from('milestones').select('id, text, horizon, parent_milestone_id, aspiration_id').eq('user_id', user.id),
+      supabase.from('milestones').select('id, user_id, text, horizon, parent_milestone_id, aspiration_id'),
       supabase.from('areas').select('id, name').order('name'),
     ])
     setWeeklyMs(msR.data || [])
@@ -133,7 +133,7 @@ export default function WeeklyFocusPage() {
   }
 
   async function refetchTasks() {
-    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id)
+    const { data } = await supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id')
     if (data) setTasks(data)
   }
 
@@ -306,7 +306,8 @@ export default function WeeklyFocusPage() {
             const isOverdue = ms.due_date && ms.due_date < today && ms.status !== 'Done'
             const anchor = ms.anchor_person_id ? people.find(p => p.id === ms.anchor_person_id) : null
             const sb = STATUS_BADGE[ms.status] || STATUS_BADGE.Active
-            const borderCol = STATUS_BORDER[ms.status] || STATUS_BORDER.Active
+            const isSharedMs = ms.user_id && ms.user_id !== user.id
+            const borderCol = isSharedMs ? '#7b5ea7' : (STATUS_BORDER[ms.status] || STATUS_BORDER.Active)
             const breadcrumb = getBreadcrumb(ms)
             const isExpanded = !collapsedCards.has(ms.id)
             const linkedTasks = tasks.filter(t => t.milestone_id === ms.id)
@@ -329,6 +330,7 @@ export default function WeeklyFocusPage() {
                     {breadcrumb && due && <span style={{ fontSize: '10px', color: 'var(--content-border-strong)' }}>·</span>}
                     {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: due.color, fontWeight: due.bold ? 600 : 400 }}>{due.text}</span>}
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 6px', borderRadius: 10, background: sb.bg, color: sb.color }}>{ms.status}</span>
+                    {isSharedMs && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7' }}>shared</span>}
                   </div>
                   {/* Row 2: milestone text + right group */}
                   <div className="flex items-center gap-3">
@@ -419,10 +421,14 @@ export default function WeeklyFocusPage() {
                       </div>
                     ) : (
                       <div className="flex justify-end" style={{ padding: '2px 16px 4px' }}>
+                        {isSharedMs ? (
+                          <span title="Tasks are linked by the milestone owner" style={{ fontSize: '11px', color: 'var(--ink-faint)', fontFamily: 'var(--font-mono)', fontStyle: 'italic' }}>Read-only</span>
+                        ) : (
                         <button onClick={() => { setLinkPickerMsId(ms.id); setLinkSearch('') }} className="flex items-center gap-1"
                           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--ink-faint)', fontFamily: 'var(--font-sans)', padding: '2px 0' }}>
                           <Plus size={12} /> Link task
                         </button>
+                        )}
                       </div>
                     )}
                   </div>

@@ -85,7 +85,7 @@ export default function ThisWeekPage() {
     const showSkeleton = !cachedData
     if (showSkeleton) setLoading(true)
     const [tR, mR, pR] = await Promise.all([
-      supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).eq('done', false).order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('done', false).order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('milestones').select('id, text, aspiration_id, aspirations(text)').eq('user_id', user.id).eq('horizon', 'Weekly'),
       supabase.from('people').select('id, name').order('name'),
     ])
@@ -98,7 +98,7 @@ export default function ThisWeekPage() {
   function invalidateCache() { cachedData = null; cacheTime = null }
 
   async function refetchTasks() {
-    const { data } = await supabase.from('tasks').select('id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('user_id', user.id).eq('done', false).order('due_date', { ascending: true, nullsFirst: false })
+    const { data } = await supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('done', false).order('due_date', { ascending: true, nullsFirst: false })
     if (data) { setTasks(data); if (cachedData) { cachedData = { ...cachedData, tasks: data }; cacheTime = Date.now() } }
   }
 
@@ -389,22 +389,32 @@ export default function ThisWeekPage() {
   // ── Task row ──
   function renderTaskRow(task, cluster) {
     const due = formatDue(task.due_date)
+    const isShared = task.user_id && task.user_id !== user.id
+    const sharedOwnerName = isShared ? (people.find(p => p.id === task.user_id)?.name || 'another user') : null
+    const sharedTooltip = isShared ? `Assigned by ${sharedOwnerName}` : undefined
 
     return (
-      <div className="tw-task-row" style={{ display: 'flex', alignItems: 'center', padding: '9px 18px', gap: 10, transition: 'background 100ms', minHeight: 44, cursor: 'default' }}
+      <div className="tw-task-row" style={{ display: 'flex', alignItems: 'center', padding: '9px 18px', gap: 10, transition: 'background 100ms', minHeight: 44, cursor: 'default', borderLeft: isShared ? '3px solid #7b5ea7' : undefined }}
         onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
         {/* Checkbox */}
-        <button onClick={() => toggleDone(task)}
-          style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${task.done ? 'var(--accent-green)' : 'var(--content-border-strong)'}`, background: task.done ? 'var(--accent-green)' : 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-          {task.done && <Check size={10} color="white" strokeWidth={3} />}
-        </button>
+        {isShared ? (
+          <div title={sharedTooltip} style={{ width: 18, height: 18, borderRadius: 4, border: '1.5px solid var(--content-border)', background: 'var(--content-bg)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'not-allowed', opacity: 0.5 }} />
+        ) : (
+          <button onClick={() => toggleDone(task)}
+            style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${task.done ? 'var(--accent-green)' : 'var(--content-border-strong)'}`, background: task.done ? 'var(--accent-green)' : 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+            {task.done && <Check size={10} color="white" strokeWidth={3} />}
+          </button>
+        )}
 
-        {/* Text — click to edit */}
-        <span onClick={() => openEditPanel(task)} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', lineHeight: 1.4, color: task.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.4 : 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', cursor: 'pointer' }}>
+        {/* Text — click to edit (disabled for shared) */}
+        <span onClick={isShared ? undefined : () => openEditPanel(task)} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', lineHeight: 1.4, color: task.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.4 : 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', cursor: isShared ? 'default' : 'pointer' }}>
           {task.task}
         </span>
+
+        {/* Shared badge */}
+        {isShared && <span title={sharedTooltip} style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7', flexShrink: 0 }}>shared</span>}
 
         {/* Due date */}
         {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: due.color, fontWeight: due.bold ? 600 : 400, flexShrink: 0 }}>{due.text}</span>}
