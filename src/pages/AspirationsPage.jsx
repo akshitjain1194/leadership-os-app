@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { showToast } from '../components/Toast'
 import { getAreaColor } from '../lib/areaUtils'
+import { useUserProfile } from '../contexts/UserProfileContext'
 import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X } from 'lucide-react'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CHILD_H = { Annual: 'SixMonth', SixMonth: 'Monthly', Monthly: 'Weekly' }
@@ -105,6 +106,7 @@ export default function AspirationsPage() {
   const [areaDropdownAspId, setAreaDropdownAspId] = useState(null)
   const aspFormRef = useRef(null)
   const msFormRef = useRef(null)
+  const { selfPersonId } = useUserProfile()
 
   function applyData(d) { setAspirations(d.aspirations); setMilestones(d.milestones); setTasks(d.tasks); setPeople(d.people); setAreas(d.areas) }
 
@@ -123,6 +125,17 @@ export default function AspirationsPage() {
       supabase.from('areas').select('*').order('name'),
     ])
     const fresh = { aspirations: aR.data || [], milestones: mR.data || [], tasks: tR.data || [], people: pR.data || [], areas: arR.data || [] }
+    console.log('[DEBUG] All aspirations fetched:', fresh.aspirations.length, fresh.aspirations.map(a => ({ id: a.id, text: a.text?.substring(0, 30), user_id: a.user_id })))
+    console.log('[DEBUG] Current user.id:', user.id)
+    console.log('[DEBUG] Own aspirations:', fresh.aspirations.filter(a => a.user_id === user.id).length)
+    console.log('[DEBUG] Shared aspirations:', fresh.aspirations.filter(a => a.user_id !== user.id).length)
+    console.log('[DEBUG] selfPersonId:', selfPersonId)
+    // Check roster for current user's person
+    if (selfPersonId) {
+      supabase.from('aspiration_roster').select('*').eq('person_id', selfPersonId).then(({ data: rosterCheck }) => {
+        console.log('[DEBUG] Roster entries for selfPersonId:', rosterCheck)
+      })
+    }
     cachedData = fresh; cacheTime = Date.now()
     applyData(fresh); setLoading(false)
   }
