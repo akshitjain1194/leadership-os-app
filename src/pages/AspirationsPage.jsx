@@ -50,31 +50,16 @@ function isOverdue(s) {
   return d < t
 }
 
-function ProgressRing({ progress, size = 40 }) {
-  const sw = 3, r = (size - sw) / 2, c = 2 * Math.PI * r
-  return (
-    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--content-border)" strokeWidth={sw} />
-      {progress > 0 && (
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--accent-green)" strokeWidth={sw}
-          strokeDasharray={c} strokeDashoffset={c - (progress / 100) * c}
-          strokeLinecap="round" style={{ transition: 'stroke-dashoffset 400ms ease' }} />
-      )}
-    </svg>
-  )
-}
-
 function SkeletonCard() {
   return (
-    <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', borderLeft: '3px solid #e8e3da' }}>
+    <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '12px 18px', borderLeft: '3px solid #e8e3da' }}>
       <div className="flex items-center gap-3">
         <div style={{ flex: 1 }}>
-          <div style={{ width: '60%', height: 16, borderRadius: 4, background: '#e8e3da', marginBottom: 8 }} />
-          <div style={{ width: '35%', height: 10, borderRadius: 4, background: '#f0ece4' }} />
+          <div style={{ width: '55%', height: 14, borderRadius: 3, background: '#e8e3da', marginBottom: 4 }} />
+          <div style={{ width: '30%', height: 9, borderRadius: 3, background: '#f0ece4' }} />
         </div>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#e8e3da' }} />
+        <div style={{ width: 48, height: 3, borderRadius: 2, background: '#e8e3da' }} />
       </div>
-      <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e8e3da', marginTop: 14 }} />
     </div>
   )
 }
@@ -100,7 +85,7 @@ export default function AspirationsPage() {
   const [loading, setLoading] = useState(true)
 
   const [areaFilter, setAreaFilter] = useState(null)
-  const [collapsedAsps, setCollapsedAsps] = useState(new Set())
+  const [expandedAsps, setExpandedAsps] = useState(new Set())
   const [expandedMs, setExpandedMs] = useState(new Set())
 
   const [aspForm, setAspForm] = useState(null)
@@ -289,7 +274,7 @@ export default function AspirationsPage() {
     else { showToast('Task unlinked', 'success'); invalidateCache(); await refetchTasks() }
   }
 
-  function toggleAspCollapse(id) { setCollapsedAsps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleAspExpand(id) { setExpandedAsps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleMsExpand(id) { setExpandedMs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleAreaCollapse(id) { setCollapsedAreas(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
 
@@ -448,19 +433,22 @@ export default function AspirationsPage() {
     )
   }
 
-  // ── Milestone tree ──
+  // ── Milestone tree (timeline layout) ──
+  const INDENT = { Annual: 0, SixMonth: 20, Monthly: 40, Weekly: 60 }
+  const DATE_COLOR = { Annual: '#2d6a4f', SixMonth: '#185fa5', Monthly: '#c8982a', Weekly: '#e07a5f' }
+
   function renderTree(aspirationId, parentId, horizon) {
     const key = `${aspirationId}|${parentId || ''}|${horizon}`
     const items = msIndex.byParent[key] || []
     const nextH = CHILD_H[horizon]
-    const isNested = parentId !== null
+    const indent = INDENT[horizon] || 0
     const showAddHere = msForm && !msForm.id && msForm.aspirationId === aspirationId &&
       (parentId ? msForm.parentMilestoneId === parentId : !msForm.parentMilestoneId) &&
       msForm.horizon === horizon
 
     if (!items.length && !showAddHere) return null
 
-    const content = (
+    return (
       <>
         {items.map(m => {
           const hasKids = nextH && msIndex.hasChild.has(m.id)
@@ -475,63 +463,51 @@ export default function AspirationsPage() {
           const anchor = m.anchor_person_id ? people.find(p => p.id === m.anchor_person_id) : null
           const badge = HORIZON_BADGE[m.horizon]
           const dotColor = STATUS_DOT[m.status] || STATUS_DOT.Active
-
           const progColor = overdue && prog < 25 ? 'var(--danger)' : prog > 50 ? 'var(--accent-green)' : 'var(--ink-faint)'
           const linkedTasks = m.horizon === 'Weekly' ? tasks.filter(t => t.milestone_id === m.id) : []
           const linkedDone = linkedTasks.filter(t => t.done).length
 
           return (
             <div key={m.id}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                {isNested && <div style={{ width: 14, borderTop: '1px solid var(--content-border)', flexShrink: 0 }} />}
-
+              <div style={{ display: 'flex', minHeight: 32, alignItems: 'center' }}>
+                {/* Date cell */}
+                <div style={{ width: 72, paddingLeft: 18, paddingRight: 8, flexShrink: 0, textAlign: 'right' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: overdue ? 600 : 500, color: overdue ? '#dc2626' : (due ? DATE_COLOR[m.horizon] || 'var(--ink-faint)' : 'var(--ink-faint)') }}>
+                    {due || '—'}
+                  </span>
+                </div>
+                {/* Content cell */}
                 {deletingMsId === m.id ? (
-                  <div className="flex items-center gap-2 flex-1" style={{ height: 36, padding: '0 6px', fontSize: '12px' }}>
-                    <span style={{ color: 'var(--ink-soft)', flex: 1 }}>Delete &ldquo;{m.text.length > 30 ? m.text.slice(0, 30) + '…' : m.text}&rdquo; and all breakdowns?</span>
+                  <div className="flex items-center gap-2 flex-1" style={{ borderLeft: '1px solid var(--content-border)', paddingLeft: 12 + indent, height: 32, fontSize: '12px' }}>
+                    <span style={{ color: 'var(--ink-soft)', flex: 1 }}>Delete &ldquo;{m.text.length > 30 ? m.text.slice(0, 30) + '…' : m.text}&rdquo;?</span>
                     <button onClick={() => deleteMs(m.id)} style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--danger)', color: 'white', border: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>Delete</button>
                     <button onClick={() => setDeletingMsId(null)} style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--content-border)', cursor: 'pointer', fontSize: '12px', fontFamily: 'var(--font-sans)' }}>Cancel</button>
                   </div>
                 ) : (
-                  <div className="ms-row flex items-center gap-2 flex-1" style={{ height: 36, padding: '0 6px', borderRadius: 6, transition: 'background 150ms ease', cursor: 'default' }}>
+                  <div className="ms-row flex items-center gap-2 flex-1" style={{ borderLeft: '1px solid var(--content-border)', paddingLeft: 12 + indent, paddingRight: 6, height: 32, transition: 'background 150ms', cursor: 'default' }}>
                     {hasKids ? (
-                      <button onClick={() => toggleMsExpand(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--ink-faint)', display: 'flex', flexShrink: 0, transition: 'transform 150ms ease' }}>
-                        {isExp ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      <button onClick={() => toggleMsExpand(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--ink-faint)', display: 'flex', flexShrink: 0 }}>
+                        {isExp ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                       </button>
-                    ) : <span style={{ width: 14, flexShrink: 0 }} />}
-
-                    {badge && (
-                      <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 10, background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>{badge.label}</span>
-                    )}
-
+                    ) : <span style={{ width: 13, flexShrink: 0 }} />}
+                    {badge && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 10, background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0 }}>{badge.label}</span>}
                     <span title={m.text} onClick={m.horizon === 'Weekly' ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default' }}>{m.text}</span>
-
-                    {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: overdue ? 'var(--danger)' : 'var(--ink-faint)', minWidth: 58, textAlign: 'right', flexShrink: 0 }}>{due}</span>}
-
-                    {anchor && (
-                      <div title={anchor.name} style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-                        {getInitials(anchor.name)}
-                      </div>
-                    )}
-
-                    {showProg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: progColor, minWidth: 32, textAlign: 'right', flexShrink: 0 }}>{prog}%</span>}
-
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-
+                    {anchor && <div title={anchor.name} style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>}
+                    {showProg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: progColor, flexShrink: 0 }}>{prog}%</span>}
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                     {m.horizon === 'Weekly' && linkedTasks.length > 0 && (
-                      <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 8, background: linkedDone === linkedTasks.length ? 'var(--accent-green-light)' : 'var(--content-bg)', border: '1px solid var(--content-border)', color: linkedDone === linkedTasks.length ? 'var(--accent-green)' : 'var(--ink-faint)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                        {linkedTasks.length} task{linkedTasks.length !== 1 ? 's' : ''} · {linkedDone} done
+                      <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: linkedDone === linkedTasks.length ? 'var(--accent-green-light)' : 'var(--content-bg)', border: '1px solid var(--content-border)', color: linkedDone === linkedTasks.length ? 'var(--accent-green)' : 'var(--ink-faint)', flexShrink: 0 }}>
+                        {linkedTasks.length}t · {linkedDone}d
                       </span>
                     )}
-
                     <div className="ms-actions flex items-center gap-1" style={{ flexShrink: 0 }}>
-                      <button onClick={() => openEditMs(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Pencil size={14} /></button>
-                      {nextH && <button onClick={() => openAddMs(m.aspiration_id, m.id, nextH)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Plus size={14} /></button>}
-                      <button onClick={() => setDeletingMsId(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Trash2 size={14} /></button>
+                      <button onClick={() => openEditMs(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Pencil size={12} /></button>
+                      {nextH && <button onClick={() => openAddMs(m.aspiration_id, m.id, nextH)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Plus size={12} /></button>}
+                      <button onClick={() => setDeletingMsId(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Trash2 size={12} /></button>
                     </div>
                   </div>
                 )}
               </div>
-
               {isEditing && renderMsForm()}
               {m.horizon === 'Weekly' && openTaskPanel === m.id && renderTaskPanel(m)}
               {(isExp || hasAddChild) && nextH && renderTree(aspirationId, m.id, nextH)}
@@ -541,10 +517,6 @@ export default function AspirationsPage() {
         {showAddHere && renderMsForm()}
       </>
     )
-
-    return isNested
-      ? <div style={{ marginLeft: 12, paddingLeft: 14, borderLeft: '1px solid var(--content-border)' }}>{content}</div>
-      : content
   }
 
   // ── Render aspiration card ──
@@ -553,75 +525,79 @@ export default function AspirationsPage() {
     const aName = areaObj?.name || null
     const borderCol = getAreaColor(aName)
     const prog = Math.round(progressMap['a-' + a.id] || 0)
+    const isExpanded = expandedAsps.has(a.id)
+    const subtitle = [aName, a.start_date && a.end_date ? (() => { const s = new Date(a.start_date + 'T00:00:00'), e = new Date(a.end_date + 'T00:00:00'); return `${MONTHS[s.getMonth()]} ${s.getFullYear()} → ${MONTHS[e.getMonth()]} ${e.getFullYear()}` })() : null].filter(Boolean).join(' · ')
     const hasAnn = milestones.some(m => m.aspiration_id === a.id && m.horizon === 'Annual')
-    const showProg = prog > 0 || hasAnn
-    const isCollapsed = collapsedAsps.has(a.id)
-    const dateRange = a.start_date && a.end_date ? (() => {
-      const s = new Date(a.start_date + 'T00:00:00'), e = new Date(a.end_date + 'T00:00:00')
-      return `${MONTHS[s.getMonth()]} ${s.getFullYear()} → ${MONTHS[e.getMonth()]} ${e.getFullYear()} · ${a.horizon_years} year${a.horizon_years !== 1 ? 's' : ''}`
-    })() : null
 
     return (
-      <div key={a.id} style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', borderLeft: `3px solid ${borderCol}` }}>
+      <div key={a.id} style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', borderLeft: `3px solid ${borderCol}`, marginBottom: 0 }}>
         {deletingAspId === a.id ? (
-          <div className="flex flex-col gap-3">
-            <p style={{ fontSize: '14px', color: 'var(--ink-soft)', lineHeight: 1.5 }}>Delete this aspiration and all milestones beneath it? This cannot be undone.</p>
+          <div style={{ padding: '12px 18px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--ink-soft)', lineHeight: 1.5, marginBottom: 8 }}>Delete this aspiration and all milestones?</p>
             <div className="flex gap-2">
-              <button onClick={() => deleteAsp(a.id)} style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--danger)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Delete</button>
-              <button onClick={() => setDeletingAspId(null)} style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px' }}>Cancel</button>
+              <button onClick={() => deleteAsp(a.id)} style={{ padding: '5px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--danger)', color: 'white', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>Delete</button>
+              <button onClick={() => setDeletingAspId(null)} style={{ padding: '5px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--content-border)', cursor: 'pointer', fontSize: '12px' }}>Cancel</button>
             </div>
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-3">
+            {/* Header — clickable to expand */}
+            <div onClick={() => toggleAspExpand(a.id)} className="flex items-center gap-3" style={{ padding: '12px 18px', cursor: 'pointer' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                {/* Clickable area tag */}
-                <div style={{ position: 'relative', marginBottom: 4, display: 'inline-block' }}>
-                  <div onClick={() => setAreaDropdownAspId(areaDropdownAspId === a.id ? null : a.id)} style={{ cursor: 'pointer' }} className="flex items-center gap-2">
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: borderCol, flexShrink: 0 }} />
+                <div className="flex items-center gap-2">
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: borderCol, flexShrink: 0 }} />
+                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.text}</span>
+                </div>
+                {subtitle && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', marginTop: 2, marginLeft: 16 }}>{subtitle}</div>}
+              </div>
+              <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                {(prog > 0 || hasAnn) && <span style={{ fontFamily: 'var(--font-serif)', fontSize: '16px', color: prog > 0 ? 'var(--accent-green)' : 'var(--ink-faint)' }}>{prog}%</span>}
+                {(prog > 0 || hasAnn) && (
+                  <div style={{ width: 48, height: 3, borderRadius: 2, background: 'var(--content-border)', overflow: 'hidden' }}>
+                    <div style={{ width: `${prog}%`, height: '100%', background: 'var(--accent-green)', borderRadius: 2, transition: 'width 400ms ease' }} />
+                  </div>
+                )}
+                <button onClick={e => { e.stopPropagation(); openEditAsp(a) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Pencil size={13} /></button>
+                <button onClick={e => { e.stopPropagation(); setDeletingAspId(a.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Trash2 size={13} /></button>
+                <span style={{ color: 'var(--ink-faint)', display: 'flex', transition: 'transform 150ms' }}>{isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
+              </div>
+            </div>
+
+            {/* Body — only rendered when expanded */}
+            {isExpanded && (
+              <div style={{ borderTop: '1px solid var(--content-border)', padding: '10px 0' }}>
+                {/* Area reassign dropdown */}
+                <div style={{ padding: '0 18px 6px', position: 'relative', display: 'inline-block' }}>
+                  <div onClick={() => setAreaDropdownAspId(areaDropdownAspId === a.id ? null : a.id)} style={{ cursor: 'pointer' }} className="flex items-center gap-1">
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: borderCol, flexShrink: 0 }} />
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)' }}>{aName || 'Assign area'} ▾</span>
                   </div>
                   {areaDropdownAspId === a.id && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', marginTop: 4, minWidth: 160, padding: '4px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                      <div onClick={() => reassignArea(a.id, null)} style={{ padding: '5px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--ink-faint)', transition: 'background 100ms' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>No area</div>
+                    <div style={{ position: 'absolute', top: '100%', left: 18, zIndex: 10, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', marginTop: 4, minWidth: 160, padding: '4px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                      <div onClick={() => reassignArea(a.id, null)} style={{ padding: '5px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--ink-faint)', transition: 'background 100ms' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>No area</div>
                       {areas.map(ar => (
-                        <div key={ar.id} onClick={() => reassignArea(a.id, ar.id)} className="flex items-center gap-2"
-                          style={{ padding: '5px 10px', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                          <span style={{ width: 10, height: 10, borderRadius: 3, background: getAreaColor(ar.name), flexShrink: 0 }} />
+                        <div key={ar.id} onClick={() => reassignArea(a.id, ar.id)} className="flex items-center gap-2" style={{ padding: '5px 10px', cursor: 'pointer', fontSize: '12px', transition: 'background 100ms' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                          <span style={{ width: 8, height: 8, borderRadius: 2, background: getAreaColor(ar.name), flexShrink: 0 }} />
                           <span style={{ color: 'var(--ink)' }}>{ar.name}</span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-                <div style={{ fontFamily: 'var(--font-serif)', fontSize: '16px', color: 'var(--ink)', lineHeight: 1.4 }}>{a.text}</div>
-                {dateRange && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', marginTop: 4 }}>{dateRange}</div>}
-              </div>
-              <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
-                {showProg && <span style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 700, color: prog > 0 ? 'var(--accent-green)' : 'var(--ink-faint)' }}>{prog}%</span>}
-                {showProg && <ProgressRing progress={prog} />}
-                <button onClick={() => openEditAsp(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}><Pencil size={15} /></button>
-                <button onClick={() => setDeletingAspId(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}><Trash2 size={15} /></button>
-                <button onClick={() => toggleAspCollapse(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-faint)' }}>
-                  {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                </button>
-              </div>
-            </div>
-            <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'var(--content-border)', marginTop: 12, overflow: 'hidden' }}>
-              <div style={{ width: `${prog}%`, height: '100%', background: 'var(--accent-green)', borderRadius: 2, transition: 'width 400ms ease' }} />
-            </div>
-            {!isCollapsed && (
-              <div style={{ borderTop: '1px solid var(--content-border)', paddingTop: 16, marginTop: 16 }}>
+
+                {/* Timeline tree */}
                 {renderTree(a.id, null, 'Annual')}
-                {!milestones.some(m => m.aspiration_id === a.id && m.horizon === 'Annual') && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId) && (
-                  <p style={{ fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No milestones yet — add an Annual Milestone to start breaking this down</p>
+
+                {/* Empty + add button */}
+                {!hasAnn && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId) && (
+                  <p style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic', padding: '6px 18px' }}>No milestones yet — add an Annual Milestone to start</p>
                 )}
                 {!(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId && msForm.horizon === 'Annual') && (
-                  <button onClick={() => openAddMs(a.id, null, 'Annual')} className="flex items-center gap-1" style={{ marginTop: 8, padding: '5px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--accent-coral)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 500 }}>
-                    <Plus size={13} /> Add Annual Milestone
-                  </button>
+                  <div style={{ padding: '4px 18px 2px', marginLeft: 72 }}>
+                    <button onClick={() => openAddMs(a.id, null, 'Annual')} className="flex items-center gap-1" style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-faint)', border: '1px dashed var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                      <Plus size={11} /> Annual milestone
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -636,16 +612,16 @@ export default function AspirationsPage() {
     const isCollapsed = collapsedAreas.has(areaId)
     return (
       <div key={areaId}>
-        <div className="flex items-center gap-2" style={{ marginTop: idx > 0 ? 24 : 0, marginBottom: 12 }}>
-          {color && <span style={{ width: 12, height: 12, borderRadius: 3, background: color, flexShrink: 0 }} />}
-          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: color ? 'var(--ink)' : 'var(--ink-faint)', fontStyle: color ? 'normal' : 'italic' }}>{label}</span>
+        <div className="flex items-center gap-2" style={{ marginTop: idx > 0 ? 20 : 0, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--content-border)' }}>
+          {color && <span style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />}
+          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: color ? 'var(--ink)' : 'var(--ink-faint)', fontStyle: color ? 'normal' : 'italic' }}>{label}</span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>({asps.length})</span>
-          <div style={{ flex: 1, height: 1, background: 'var(--content-border)' }} />
+          <div style={{ flex: 1 }} />
           <button onClick={() => toggleAreaCollapse(areaId)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}>
             {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
           </button>
         </div>
-        {!isCollapsed && <div className="flex flex-col gap-4">{asps.map(a => renderCard(a))}</div>}
+        {!isCollapsed && <div className="flex flex-col" style={{ gap: 8 }}>{asps.map(a => renderCard(a))}</div>}
       </div>
     )
   }
