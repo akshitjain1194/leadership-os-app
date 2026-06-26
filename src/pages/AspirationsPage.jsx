@@ -143,7 +143,7 @@ export default function AspirationsPage() {
     setTaskPanelTasks(data || [])
   }
 
-  useEffect(() => { fetchAll() }, [user.id])
+  useEffect(() => { cachedData = null; fetchAll() }, [user.id])
 
   // Click-outside + Escape
   useEffect(() => {
@@ -645,6 +645,7 @@ export default function AspirationsPage() {
           <p style={{ fontSize: '14px', color: 'var(--ink-faint)' }}>Your long-term vision, broken down into action</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => { cachedData = null; cacheTime = null; fetchAll() }} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Refresh</button>
           <button onClick={() => setAreasPanel(p => !p)} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>Manage Areas</button>
           <button onClick={openAddAsp} className="flex items-center gap-1" style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', background: 'var(--ink)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>
             <Plus size={14} /> Add Aspiration
