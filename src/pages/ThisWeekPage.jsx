@@ -480,7 +480,7 @@ export default function ThisWeekPage() {
 
       {/* ── Section header ── */}
       <div className="flex items-baseline justify-between" style={{ marginBottom: 16 }}>
-        <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '22px', color: 'var(--ink)' }}>This Week</h2>
+        <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '22px', color: 'var(--ink)' }}>Tasks</h2>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--ink-faint)' }}>{todayLabel}</span>
       </div>
 

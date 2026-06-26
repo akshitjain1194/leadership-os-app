@@ -192,7 +192,7 @@ export default function Shell({ user }) {
           {activeSection === 'Work' && (
             <>
               <NavItem to="/capture"       label="Capture" />
-              <NavItem to="/this-week"     label="This Week" />
+              <NavItem to="/this-week"     label="Tasks" />
               <NavItem to="/aspirations"   label="Aspirations" />
               <StrategicGroup />
               <NavItem to="/team-tracker"  label="Team Tracker" />
