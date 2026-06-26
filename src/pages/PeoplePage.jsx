@@ -50,7 +50,7 @@ function SkeletonCard() {
   )
 }
 
-function PersonCard({ person, roster, onEdit, onDelete, isOwner }) {
+function PersonCard({ person, roster, weeklyMilestones, onEdit, onDelete, isOwner }) {
   const [expanded, setExpanded] = useState(false)
   const aspirations = roster.filter(r => r.person_name === person.name)
 
@@ -58,6 +58,9 @@ function PersonCard({ person, roster, onEdit, onDelete, isOwner }) {
   aspirations.forEach(a => { roleCounts[a.role] = (roleCounts[a.role] || 0) + 1 })
 
   const profileParts = Object.entries(roleCounts).map(([role, count]) => `${count} ${role}`)
+
+  const aspirationCount = roster.filter(r => r.person_id === person.id).length
+  const weeklyMilestoneCount = weeklyMilestones.filter(m => m.anchor_person_id === person.id).length
 
   return (
     <div style={{
@@ -88,6 +91,24 @@ function PersonCard({ person, roster, onEdit, onDelete, isOwner }) {
               No aspirations assigned
             </div>
           )}
+          <div className="flex items-center gap-2" style={{ marginTop: '6px' }}>
+            <span style={{
+              fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '2px 8px', borderRadius: '20px',
+              background: aspirationCount > 0 ? 'var(--accent-green-light)' : 'var(--content-bg)',
+              color: aspirationCount > 0 ? 'var(--accent-green)' : 'var(--ink-faint)',
+              border: `1px solid ${aspirationCount > 0 ? 'var(--accent-green-light)' : 'var(--content-border)'}`,
+            }}>
+              {aspirationCount} aspiration{aspirationCount !== 1 ? 's' : ''}
+            </span>
+            <span style={{
+              fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '2px 8px', borderRadius: '20px',
+              background: weeklyMilestoneCount > 0 ? 'var(--accent-coral-light)' : 'var(--content-bg)',
+              color: weeklyMilestoneCount > 0 ? 'var(--accent-coral)' : 'var(--ink-faint)',
+              border: `1px solid ${weeklyMilestoneCount > 0 ? 'var(--accent-coral-light)' : 'var(--content-border)'}`,
+            }}>
+              {weeklyMilestoneCount} weekly milestone{weeklyMilestoneCount !== 1 ? 's' : ''}
+            </span>
+          </div>
         </div>
 
         {isOwner && <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
@@ -147,6 +168,7 @@ export default function PeoplePage() {
   const { user } = useOutletContext()
   const [people, setPeople] = useState([])
   const [roster, setRoster] = useState([])
+  const [weeklyMilestones, setWeeklyMilestones] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingPerson, setEditingPerson] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -158,13 +180,15 @@ export default function PeoplePage() {
 
   async function loadData() {
     setLoading(true)
-    const [peopleRes, rosterRes] = await Promise.all([
+    const [peopleRes, rosterRes, milestonesRes] = await Promise.all([
       supabase.from('people').select('*').order('name'),
       supabase.from('aspiration_roster').select('*').eq('user_id', user.id),
+      supabase.from('milestones').select('anchor_person_id, horizon').eq('user_id', user.id).eq('horizon', 'Weekly'),
     ])
     if (peopleRes.error) showToast(peopleRes.error.message, 'error')
     else setPeople(peopleRes.data)
     if (!rosterRes.error) setRoster(rosterRes.data)
+    if (!milestonesRes.error) setWeeklyMilestones(milestonesRes.data)
     setLoading(false)
   }
 
@@ -365,6 +389,7 @@ export default function PeoplePage() {
               key={person.id}
               person={person}
               roster={roster}
+              weeklyMilestones={weeklyMilestones}
               onEdit={handleEdit}
               onDelete={handleDelete}
               isOwner={person.user_id === user.id}
