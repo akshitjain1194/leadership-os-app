@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { showToast } from '../components/Toast'
 import { getAreaColor } from '../lib/areaUtils'
 import { useUserProfile } from '../contexts/UserProfileContext'
-import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X, GitBranch } from 'lucide-react'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CHILD_H = { Annual: 'SixMonth', SixMonth: 'Monthly', Monthly: 'Weekly' }
 const HORIZON_BADGE = {
@@ -88,6 +88,7 @@ export default function AspirationsPage() {
   const [areaFilter, setAreaFilter] = useState(null)
   const [expandedAsps, setExpandedAsps] = useState(new Set())
   const [expandedMs, setExpandedMs] = useState(new Set())
+  const [journeyAspirationId, setJourneyAspirationId] = useState(null)
 
   const [aspForm, setAspForm] = useState(null)
   const [msForm, setMsForm] = useState(null)
@@ -524,6 +525,157 @@ export default function AspirationsPage() {
     )
   }
 
+  // ── Journey view ──
+  function renderJourney(a) {
+    const aspMilestones = milestones.filter(m => m.aspiration_id === a.id)
+
+    if (!aspMilestones.length) {
+      return (
+        <div style={{ borderTop: '1px solid var(--content-border)', padding: '32px 24px', textAlign: 'center' }}>
+          <p style={{ fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+            No milestones yet — add an Annual Milestone to start the journey
+          </p>
+        </div>
+      )
+    }
+
+    const annuals  = aspMilestones.filter(m => m.horizon === 'Annual')
+    const sixMonths = aspMilestones.filter(m => m.horizon === 'SixMonth')
+    const monthlys = aspMilestones.filter(m => m.horizon === 'Monthly')
+    const weeklys  = aspMilestones.filter(m => m.horizon === 'Weekly')
+
+    const stops = [
+      ...monthlys.map(m => ({ ...m, stopType: 'Monthly' })),
+      ...sixMonths.map(m => ({ ...m, stopType: 'SixMonth' })),
+    ].sort((x, y) => {
+      if (!x.due_date && !y.due_date) return 0
+      if (!x.due_date) return 1
+      if (!y.due_date) return -1
+      return x.due_date.localeCompare(y.due_date)
+    })
+
+    const prog = Math.round(progressMap['a-' + a.id] || 0)
+
+    function ml(dateStr) {
+      if (!dateStr) return null
+      return MONTHS[new Date(dateStr + 'T00:00:00').getMonth()]
+    }
+
+    function ai(m) {
+      if (!m.anchor_person_id) return null
+      const p = people.find(p => p.id === m.anchor_person_id)
+      return p ? getInitials(p.name) : null
+    }
+
+    function AnchorCircle({ initials }) {
+      if (!initials) return null
+      return (
+        <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+          {initials}
+        </div>
+      )
+    }
+
+    return (
+      <div style={{ borderTop: '1px solid var(--content-border)', padding: '20px 24px' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', marginBottom: '18px' }}>
+          The path to the Annual goal · earliest → destination
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          {/* Vertical spine */}
+          <div style={{ position: 'absolute', left: '20px', top: 0, bottom: 0, width: '2px', background: 'var(--content-border)' }} />
+
+          {/* START stop */}
+          <div style={{ position: 'relative', paddingLeft: '52px', paddingBottom: '24px' }}>
+            <div style={{ position: 'absolute', left: '15px', top: '4px', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--ink-faint)' }} />
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)' }}>Now · {prog}% complete</span>
+          </div>
+
+          {/* Monthly + SixMonth stops in chronological order */}
+          {stops.map(m => {
+            const label = ml(m.due_date)
+            const initials = ai(m)
+            const dotColor = STATUS_DOT[m.status] || STATUS_DOT.Active
+
+            if (m.stopType === 'Monthly') {
+              const weeklyKids = weeklys.filter(w => w.parent_milestone_id === m.id)
+              return (
+                <div key={m.id} style={{ position: 'relative', paddingLeft: '52px', paddingBottom: '24px' }}>
+                  {label && <span style={{ position: 'absolute', left: 0, top: '4px', fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--ink-faint)', textTransform: 'uppercase' }}>{label}</span>}
+                  <div style={{ position: 'absolute', left: '13px', top: '3px', width: '14px', height: '14px', borderRadius: '50%', background: 'white', border: '3px solid #c8982a' }} />
+                  <div style={{ background: 'var(--content-bg)', border: '1px solid var(--content-border)', borderRadius: '12px', padding: '11px 14px' }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 10, background: '#fdf3dc', color: '#c8982a', fontWeight: 500 }}>Monthly</span>
+                      <div className="flex items-center gap-2">
+                        <AnchorCircle initials={initials} />
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0, display: 'inline-block' }} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '13px', fontFamily: 'var(--font-sans)', fontWeight: 500, color: 'var(--ink)', marginTop: '8px' }}>{m.text}</div>
+                    {weeklyKids.length > 0 && (
+                      <div className="flex flex-wrap gap-1" style={{ marginTop: '8px' }}>
+                        {weeklyKids.map(w => (
+                          <span key={w.id} style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '2px 8px', borderRadius: '20px', background: '#fde8e3', color: '#993c1d' }}>
+                            {w.text.length > 25 ? w.text.slice(0, 25) + '…' : w.text}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            }
+
+            if (m.stopType === 'SixMonth') {
+              return (
+                <div key={m.id} style={{ position: 'relative', paddingLeft: '52px', paddingBottom: '24px' }}>
+                  {label && <span style={{ position: 'absolute', left: 0, top: '4px', fontFamily: 'var(--font-mono)', fontSize: '9px', color: 'var(--ink-faint)', textTransform: 'uppercase' }}>{label}</span>}
+                  <div style={{ position: 'absolute', left: '11px', top: '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#3B6FB0', border: '2px solid white' }} />
+                  <div style={{ background: '#E6F1FB', border: '1px solid #B5D4F4', borderRadius: '12px', padding: '12px 14px' }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 10, background: '#deeaff', color: '#185fa5', fontWeight: 500 }}>6 Month</span>
+                      <div className="flex items-center gap-2">
+                        <AnchorCircle initials={initials} />
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0, display: 'inline-block' }} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '13px', fontFamily: 'var(--font-sans)', fontWeight: 500, color: 'var(--ink)', marginTop: '8px' }}>{m.text}</div>
+                  </div>
+                </div>
+              )
+            }
+
+            return null
+          })}
+
+          {/* Annual goal stops */}
+          {annuals.map(m => {
+            const label = ml(m.due_date)
+            const initials = ai(m)
+            const due = m.due_date ? (() => { const d = new Date(m.due_date + 'T00:00:00'); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}` })() : null
+            return (
+              <div key={m.id} style={{ position: 'relative', paddingLeft: '52px', paddingBottom: '8px' }}>
+                {label && <span style={{ position: 'absolute', left: 0, top: '4px', fontFamily: 'var(--font-mono)', fontSize: '9px', color: '#2d6a4f', textTransform: 'uppercase' }}>{label}</span>}
+                <div style={{ position: 'absolute', left: '9px', top: '2px', width: '22px', height: '22px', borderRadius: '50%', background: '#2E7D5B', boxShadow: '0 0 0 4px #E1F5EE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'white' }}>★</div>
+                <div style={{ background: 'linear-gradient(135deg, #E1F5EE, #d8f3dc)', border: '1.5px solid #9FE1CB', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '2px 7px', borderRadius: 10, background: '#2E7D5B', color: 'white', fontWeight: 500 }}>Annual goal</span>
+                    <div className="flex items-center gap-2">
+                      <AnchorCircle initials={initials} />
+                      {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#085041' }}>{due}</span>}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '14px', fontFamily: 'var(--font-sans)', fontWeight: 600, color: '#085041', marginTop: '9px' }}>{m.text}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   // ── Render aspiration card ──
   function renderCard(a) {
     const areaObj = areas.find(ar => ar.id === a.area_id)
@@ -566,12 +718,16 @@ export default function AspirationsPage() {
                 {isSharedAsp && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7' }}>shared</span>}
                 {!isSharedAsp && <button onClick={e => { e.stopPropagation(); openEditAsp(a) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Pencil size={13} /></button>}
                 {!isSharedAsp && <button onClick={e => { e.stopPropagation(); setDeletingAspId(a.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Trash2 size={13} /></button>}
+                <button onClick={e => { e.stopPropagation(); setJourneyAspirationId(journeyAspirationId === a.id ? null : a.id) }} className="flex items-center gap-1" style={{ padding: '2px 8px', borderRadius: 'var(--radius-sm)', background: journeyAspirationId === a.id ? 'var(--accent-coral)' : 'transparent', color: journeyAspirationId === a.id ? 'white' : 'var(--ink-faint)', border: `1px solid ${journeyAspirationId === a.id ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                  <GitBranch size={12} /> Journey
+                </button>
                 <span style={{ color: 'var(--ink-faint)', display: 'flex', transition: 'transform 150ms' }}>{isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
               </div>
             </div>
 
-            {/* Body — only rendered when expanded */}
-            {isExpanded && (
+            {/* Body — rendered when expanded or in Journey view */}
+            {(isExpanded || journeyAspirationId === a.id) && (
+              journeyAspirationId === a.id ? renderJourney(a) : (
               <div style={{ borderTop: '1px solid var(--content-border)', padding: '10px 0' }}>
                 {/* Area reassign dropdown — own only */}
                 {!isSharedAsp && (
@@ -609,6 +765,7 @@ export default function AspirationsPage() {
                   </div>
                 )}
               </div>
+              )
             )}
           </>
         )}
