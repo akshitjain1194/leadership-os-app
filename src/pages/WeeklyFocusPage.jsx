@@ -112,8 +112,10 @@ export default function WeeklyFocusPage() {
   const [collapsedCards, setCollapsedCards] = useState(new Set())
   const [linkPickerMsId, setLinkPickerMsId] = useState(null)
   const [linkSearch, setLinkSearch] = useState('')
+  const [statusDropdownMsId, setStatusDropdownMsId] = useState(null)
 
   const linkPickerRef = useRef(null)
+  const statusDropdownRef = useRef(null)
 
   async function fetchAll() {
     setLoading(true)
@@ -132,6 +134,12 @@ export default function WeeklyFocusPage() {
     setLoading(false)
   }
 
+  async function updateStatus(msId, status) {
+    const { error } = await supabase.from('milestones').update({ status }).eq('id', msId).eq('user_id', user.id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Status updated ✓', 'success'); setStatusDropdownMsId(null); await fetchAll() }
+  }
+
   async function refetchTasks() {
     const { data } = await supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id')
     if (data) setTasks(data)
@@ -147,6 +155,15 @@ export default function WeeklyFocusPage() {
     document.addEventListener('mousedown', onMouse)
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onMouse) }
   }, [linkPickerMsId])
+
+  useEffect(() => {
+    if (!statusDropdownMsId) return
+    function onKey(e) { if (e.key === 'Escape') setStatusDropdownMsId(null) }
+    function onMouse(e) { if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target)) setStatusDropdownMsId(null) }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onMouse)
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onMouse) }
+  }, [statusDropdownMsId])
 
   async function toggleTaskDone(task) {
     const next = !task.done
@@ -189,8 +206,8 @@ export default function WeeklyFocusPage() {
 
   // 1. Date filter
   let dateFiltered = weeklyMs
-  if (dateFilter === 'due10') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date >= today && m.due_date <= in10 && m.status !== 'Done')
-  if (dateFilter === 'overdue') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date < today && m.status !== 'Done')
+  if (dateFilter === 'due10') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date >= today && m.due_date <= in10 && m.status !== 'Done' && m.status !== 'Paused')
+  if (dateFilter === 'overdue') dateFiltered = weeklyMs.filter(m => m.due_date && m.due_date < today && m.status !== 'Done' && m.status !== 'Paused')
 
   // 2. Anchor filter
   const afterAnchor = anchorFilter ? dateFiltered.filter(m => m.anchor_person_id === anchorFilter) : dateFiltered
@@ -329,7 +346,29 @@ export default function WeeklyFocusPage() {
                     {breadcrumb && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>{breadcrumb}</span>}
                     {breadcrumb && due && <span style={{ fontSize: '10px', color: 'var(--content-border-strong)' }}>·</span>}
                     {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: due.color, fontWeight: due.bold ? 600 : 400 }}>{due.text}</span>}
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 6px', borderRadius: 10, background: sb.bg, color: sb.color }}>{ms.status}</span>
+                    <div style={{ position: 'relative', display: 'inline-flex' }} ref={statusDropdownMsId === ms.id ? statusDropdownRef : null}>
+                      <button
+                        onClick={() => !isSharedMs && setStatusDropdownMsId(statusDropdownMsId === ms.id ? null : ms.id)}
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 6px', borderRadius: 10, background: sb.bg, color: sb.color, border: 'none', cursor: isSharedMs ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}
+                      >
+                        {ms.status}{!isSharedMs && <span style={{ fontSize: '8px' }}>▾</span>}
+                      </button>
+                      {statusDropdownMsId === ms.id && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', marginTop: 3, padding: '3px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', minWidth: 90 }}>
+                          {['Active', 'At Risk', 'Done', 'Paused'].map(s => {
+                            const sb2 = STATUS_BADGE[s] || STATUS_BADGE.Active
+                            return (
+                              <div key={s} onClick={() => updateStatus(ms.id, s)}
+                                style={{ padding: '4px 10px', cursor: 'pointer', fontSize: '11px', fontFamily: 'var(--font-mono)', color: sb2.color, transition: 'background 100ms' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                                {s}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
                     {isSharedMs && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7' }}>shared</span>}
                   </div>
                   {/* Row 2: milestone text + right group */}
