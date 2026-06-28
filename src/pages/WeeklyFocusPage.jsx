@@ -34,6 +34,19 @@ function addDays(dateStr, n) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function nextSunday(fromDateStr) {
+  const d = new Date(fromDateStr + 'T00:00:00')
+  const dow = d.getDay()
+  d.setDate(d.getDate() + (dow === 0 ? 7 : 7 - dow))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function fmtShort(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`
+}
+
 function getInitials(name) {
   const p = name.trim().split(/\s+/)
   return p.length === 1 ? p[0][0].toUpperCase() : (p[0][0] + p[p.length - 1][0]).toUpperCase()
@@ -113,6 +126,8 @@ export default function WeeklyFocusPage() {
   const [linkPickerMsId, setLinkPickerMsId] = useState(null)
   const [linkSearch, setLinkSearch] = useState('')
   const [statusDropdownMsId, setStatusDropdownMsId] = useState(null)
+  const [rollPanelOpen, setRollPanelOpen] = useState(false)
+  const [rollSelections, setRollSelections] = useState({})
 
   const linkPickerRef = useRef(null)
   const statusDropdownRef = useRef(null)
@@ -120,7 +135,7 @@ export default function WeeklyFocusPage() {
   async function fetchAll() {
     setLoading(true)
     const [msR, tR, pR, allMsR, arR] = await Promise.all([
-      supabase.from('milestones').select('id, user_id, text, due_date, status, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(id, text, area_id)').eq('horizon', 'Weekly'),
+      supabase.from('milestones').select('id, user_id, text, due_date, status, rollover_count, anchor_person_id, aspiration_id, parent_milestone_id, aspirations(id, text, area_id)').eq('horizon', 'Weekly'),
       supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id'),
       supabase.from('people').select('id, name').order('name'),
       supabase.from('milestones').select('id, user_id, text, horizon, parent_milestone_id, aspiration_id'),
@@ -135,9 +150,29 @@ export default function WeeklyFocusPage() {
   }
 
   async function updateStatus(msId, status) {
-    const { error } = await supabase.from('milestones').update({ status }).eq('id', msId).eq('user_id', user.id)
+    const updateData = { status }
+    if (status === 'Done') updateData.rollover_count = 0
+    const { error } = await supabase.from('milestones').update(updateData).eq('id', msId).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
     else { showToast('Status updated ✓', 'success'); setStatusDropdownMsId(null); await fetchAll() }
+  }
+
+  async function rollWeek() {
+    const toRoll = Object.entries(rollSelections).filter(([, v]) => v.checked)
+    if (!toRoll.length) { showToast('No milestones selected', 'error'); return }
+    const errors = []
+    await Promise.all(toRoll.map(async ([id, { date }]) => {
+      const ms = weeklyMs.find(m => m.id === id)
+      const { error } = await supabase.from('milestones').update({
+        due_date: date, rollover_count: (ms?.rollover_count || 0) + 1, status: 'Active',
+      }).eq('id', id).eq('user_id', user.id)
+      if (error) errors.push(error.message)
+    }))
+    if (errors.length) showToast(errors[0], 'error')
+    else {
+      showToast(`${toRoll.length} milestone${toRoll.length !== 1 ? 's' : ''} rolled ✓`, 'success')
+      setRollPanelOpen(false); setRollSelections({}); await fetchAll()
+    }
   }
 
   async function refetchTasks() {
@@ -215,6 +250,7 @@ export default function WeeklyFocusPage() {
   // 3. Area filter
   const filtered = areaFilter ? afterAnchor.filter(m => getAreaForMilestone(m)?.id === areaFilter) : afterAnchor
   const sorted = sortMilestones(filtered)
+  const overdueMs = weeklyMs.filter(m => m.due_date && m.due_date < today && m.status !== 'Done' && m.status !== 'Paused')
 
   // Anchor people — computed from date+area filtered milestones
   const anchorPeople = (() => {
@@ -246,10 +282,95 @@ export default function WeeklyFocusPage() {
   return (
     <div className="page-pad flex flex-col gap-5">
       {/* Header */}
-      <div>
-        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '28px', color: 'var(--ink)', marginBottom: 4 }}>Weekly Focus</h1>
-        <p style={{ fontSize: '14px', color: 'var(--ink-faint)' }}>Your weekly milestones and their tasks</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '28px', color: 'var(--ink)', marginBottom: 4 }}>Weekly Focus</h1>
+          <p style={{ fontSize: '14px', color: 'var(--ink-faint)' }}>Your weekly milestones and their tasks</p>
+        </div>
+        <button
+          onClick={() => {
+            if (!rollPanelOpen) {
+              const sunday = nextSunday(today)
+              const init = {}
+              overdueMs.forEach(m => { init[m.id] = { checked: true, date: sunday } })
+              setRollSelections(init)
+            }
+            setRollPanelOpen(v => !v)
+          }}
+          className="flex items-center gap-2"
+          style={{ marginTop: 6, padding: '7px 16px', borderRadius: 'var(--radius-sm)', background: rollPanelOpen ? 'var(--ink)' : 'var(--content-bg-card)', color: rollPanelOpen ? 'white' : 'var(--ink)', border: '1.5px solid var(--content-border-strong)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}
+        >
+          ↻ Roll week
+          {overdueMs.length > 0 && (
+            <span style={{ padding: '1px 8px', borderRadius: 10, background: rollPanelOpen ? 'rgba(255,255,255,0.2)' : 'var(--accent-coral-light)', color: rollPanelOpen ? 'white' : 'var(--accent-coral)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{overdueMs.length}</span>
+          )}
+        </button>
       </div>
+
+      {/* Roll week panel */}
+      {rollPanelOpen && (
+        <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '16px 20px', maxHeight: 400, overflowY: 'auto' }}>
+          <div className="flex items-center gap-3" style={{ marginBottom: 6 }}>
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: 'var(--ink)' }}>Roll overdue milestones</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', padding: '2px 10px', borderRadius: 12, background: 'var(--accent-coral-light)', color: 'var(--accent-coral)', fontWeight: 500 }}>{overdueMs.length}</span>
+          </div>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', marginBottom: overdueMs.length > 0 ? 16 : 20 }}>Select which milestones to push forward. Each roll is counted.</p>
+          {overdueMs.length === 0 ? (
+            <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--accent-green)', textAlign: 'center', padding: '12px 0' }}>No overdue milestones — you're on track ✓</p>
+          ) : (
+            <>
+              <div>
+                {overdueMs.map(m => {
+                  const sel = rollSelections[m.id] || { checked: true, date: nextSunday(today) }
+                  const rc = m.rollover_count || 0
+                  return (
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: '0.5px solid var(--content-border)' }}>
+                      <input type="checkbox" checked={sel.checked}
+                        onChange={e => setRollSelections(prev => ({ ...prev, [m.id]: { ...sel, checked: e.target.checked } }))}
+                        style={{ width: 16, height: 16, marginTop: 3, flexShrink: 0, accentColor: 'var(--accent-coral)', cursor: 'pointer' }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4 }}>{m.text}</div>
+                        {m.aspirations?.text && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', marginTop: 2 }}>{m.aspirations.text}</div>}
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--danger)', marginTop: 2 }}>was {fmtShort(m.due_date)}</div>
+                      </div>
+                      <div className="flex items-center gap-2" style={{ flexShrink: 0, marginTop: 2 }}>
+                        {rc > 0 && (
+                          <span
+                            style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: rc >= 3 ? 'var(--danger)' : '#c8982a' }}
+                            title={rc >= 3 ? `Rolled ${rc} times — consider simplifying or demoting to monthly milestone` : undefined}
+                          >↻ {rc}</span>
+                        )}
+                        <input type="date" value={sel.date}
+                          onChange={e => setRollSelections(prev => ({ ...prev, [m.id]: { ...sel, date: e.target.value } }))}
+                          style={{ border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: '12px', fontFamily: 'var(--font-mono)', background: 'var(--content-bg-card)', color: 'var(--ink)' }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {(() => {
+                const checkedCount = Object.values(rollSelections).filter(v => v.checked).length
+                const checkedDates = Object.entries(rollSelections).filter(([, v]) => v.checked).map(([, v]) => v.date)
+                const uniqueDates = [...new Set(checkedDates)]
+                const summaryDate = uniqueDates.length === 1 ? fmtShort(uniqueDates[0]) : 'various dates'
+                return (
+                  <div className="flex items-center justify-between" style={{ paddingTop: 12, marginTop: 4, borderTop: '1px solid var(--content-border)' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>
+                      {checkedCount} milestone{checkedCount !== 1 ? 's' : ''} selected · rolling to {summaryDate}
+                    </span>
+                    <button onClick={rollWeek} disabled={checkedCount === 0}
+                      style={{ padding: '7px 18px', borderRadius: 'var(--radius-sm)', background: checkedCount > 0 ? 'var(--accent-coral)' : 'var(--content-border)', color: checkedCount > 0 ? 'white' : 'var(--ink-faint)', border: 'none', cursor: checkedCount > 0 ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500 }}>
+                      Roll selected →
+                    </button>
+                  </div>
+                )
+              })()}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Summary row */}
       {!loading && weeklyMs.length > 0 && (
@@ -346,6 +467,12 @@ export default function WeeklyFocusPage() {
                     {breadcrumb && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>{breadcrumb}</span>}
                     {breadcrumb && due && <span style={{ fontSize: '10px', color: 'var(--content-border-strong)' }}>·</span>}
                     {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: due.color, fontWeight: due.bold ? 600 : 400 }}>{due.text}</span>}
+                    {(ms.rollover_count || 0) > 0 && (
+                      <span
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: ms.rollover_count >= 3 ? 'var(--danger)' : '#c8982a' }}
+                        title={ms.rollover_count >= 3 ? `Rolled ${ms.rollover_count} times — consider simplifying or demoting to monthly milestone` : undefined}
+                      >↻ {ms.rollover_count}</span>
+                    )}
                     <div style={{ position: 'relative', display: 'inline-flex' }} ref={statusDropdownMsId === ms.id ? statusDropdownRef : null}>
                       <button
                         onClick={() => !isSharedMs && setStatusDropdownMsId(statusDropdownMsId === ms.id ? null : ms.id)}
