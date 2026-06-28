@@ -189,7 +189,7 @@ export default function CapturePage() {
         </p>
       </div>
 
-      <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)' }}>
 
         {/* Task textarea */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--content-border)' }}>
@@ -233,20 +233,20 @@ export default function CapturePage() {
               >×</button>
             )}
             {milestoneDropdownOpen && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', marginTop: 4, maxHeight: 420, overflowY: 'auto' }}>
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', marginTop: 4, maxHeight: 480, overflowY: 'auto', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
                 {msAreaGroups.length === 0 && (
-                  <div style={{ padding: '16px', fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No milestones found</div>
+                  <div style={{ padding: '14px 14px', fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No milestones found</div>
                 )}
                 {msAreaGroups.map((area, ai) => (
                   <div key={ai}>
                     {area.areaName && (
-                      <div style={{ padding: '8px 16px 4px', background: 'var(--content-bg)', position: 'sticky', top: 0, zIndex: 2, fontFamily: 'var(--font-mono)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent-coral)' }}>
+                      <div style={{ padding: '6px 14px 2px', background: 'var(--content-bg)', position: 'sticky', top: 0, zIndex: 2, fontFamily: 'var(--font-mono)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--accent-coral)' }}>
                         {area.areaName}
                       </div>
                     )}
                     {area.asps.map((asp, asi) => (
                       <div key={asi}>
-                        <div style={{ padding: '4px 16px 6px', fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: 'var(--ink-soft)', borderBottom: '1px solid var(--content-border)', background: 'var(--content-bg)', position: 'sticky', top: area.areaName ? 29 : 0, zIndex: 1 }}>
+                        <div style={{ padding: '2px 14px 4px', fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 500, color: 'var(--ink-soft)', borderBottom: '0.5px solid var(--content-border)', background: 'var(--content-bg)', position: 'sticky', top: area.areaName ? 24 : 0, zIndex: 1 }}>
                           {asp.aspText}
                         </div>
                         {asp.items.map(m => {
@@ -254,16 +254,16 @@ export default function CapturePage() {
                           return (
                             <div key={m.id}
                               onClick={() => { setSelectedMilestoneId(m.id); setMilestoneSearch(m.text); setMilestoneDropdownOpen(false) }}
-                              style={{ padding: '12px 16px', minHeight: 56, cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 10, transition: 'background 100ms', boxSizing: 'border-box' }}
+                              style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 10, transition: 'background 100ms' }}
                               onMouseEnter={e => (e.currentTarget.style.background = 'var(--content-bg)')}
                               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-coral)', flexShrink: 0, marginTop: 6 }} />
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-coral)', flexShrink: 0, marginTop: 4 }} />
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: '14px', fontFamily: 'var(--font-sans)', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{m.text}</div>
-                                <div style={{ fontSize: '12px', fontFamily: 'var(--font-sans)', color: 'var(--ink-soft)', marginTop: 3 }}>{asp.aspText}</div>
+                                <div style={{ fontSize: '13px', fontFamily: 'var(--font-sans)', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{m.text}</div>
+                                <div style={{ fontSize: '11px', fontFamily: 'var(--font-sans)', color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asp.aspText.length > 40 ? asp.aspText.slice(0, 40) + '…' : asp.aspText}</div>
                               </div>
                               {m.due_date && (
-                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: isOvd ? 'var(--danger)' : 'var(--ink-faint)', flexShrink: 0, marginTop: 3 }}>{fmtDue(m.due_date)}</span>
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: isOvd ? 'var(--danger)' : 'var(--ink-faint)', flexShrink: 0, minWidth: 44, textAlign: 'right' }}>{fmtDue(m.due_date)}</span>
                               )}
                             </div>
                           )
