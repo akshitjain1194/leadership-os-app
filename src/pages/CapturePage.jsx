@@ -152,9 +152,36 @@ export default function CapturePage() {
   const [ideaFilter, setIdeaFilter] = useState('all')
   const [search,     setSearch]     = useState('')
 
-  const textareaRef = useRef()
+  const [weeklyMilestones,    setWeeklyMilestones]    = useState([])
+  const [selectedMilestoneId, setSelectedMilestoneId] = useState(null)
+  const [milestoneSearch,     setMilestoneSearch]     = useState('')
+  const [milestoneDropdownOpen, setMilestoneDropdownOpen] = useState(false)
+  const [dateManuallySet,     setDateManuallySet]     = useState(false)
 
-  useEffect(() => { loadIdeas(); loadTaskCounts(); loadPeople() }, [user.id])
+  const textareaRef        = useRef()
+  const milestoneDropdownRef = useRef()
+
+  useEffect(() => { loadIdeas(); loadTaskCounts(); loadPeople(); loadMilestones() }, [user.id])
+
+  useEffect(() => {
+    if (!milestoneDropdownOpen) return
+    function onMouse(e) { if (milestoneDropdownRef.current && !milestoneDropdownRef.current.contains(e.target)) setMilestoneDropdownOpen(false) }
+    function onKey(e) { if (e.key === 'Escape') setMilestoneDropdownOpen(false) }
+    document.addEventListener('mousedown', onMouse)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onMouse); document.removeEventListener('keydown', onKey) }
+  }, [milestoneDropdownOpen])
+
+  async function loadMilestones() {
+    const { data } = await supabase
+      .from('milestones')
+      .select('id, text, aspiration_id, due_date, anchor_person_id, aspirations(text, areas(name))')
+      .eq('user_id', user.id)
+      .eq('horizon', 'Weekly')
+      .not('status', 'eq', 'Done')
+      .order('due_date', { ascending: true, nullsFirst: false })
+    setWeeklyMilestones(data || [])
+  }
 
   async function loadPeople() {
     setPeopleLoading(true)
@@ -197,22 +224,27 @@ export default function CapturePage() {
     if (!text.trim()) return
     setSaving(true)
     try {
-      if (!ownerId) {
+      const selectedMs = selectedMilestoneId ? weeklyMilestones.find(m => m.id === selectedMilestoneId) : null
+      const effectiveOwnerId = ownerId || selectedMs?.anchor_person_id || ''
+      const effectiveDate = dateManuallySet ? date : (selectedMs?.due_date || date)
+
+      if (!effectiveOwnerId) {
         const { error } = await supabase.from('ideas').insert({ user_id: user.id, text: text.trim(), status: 'Active' })
         if (error) throw error
         setCaptureConfirm('Parked as idea')
         await loadIdeas()
       } else {
-        const person = people.find(p => p.id === ownerId)
+        const person = people.find(p => p.id === effectiveOwnerId)
         const ownerName = person?.name || ''
-        const quadrant = getQuadrant(ownerId, date || null, selfPersonId, supervisorPersonId)
-        const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text.trim(), owner_id: ownerId, owner: ownerName, due_date: date || null, quadrant, done: false, starred: false })
+        const quadrant = getQuadrant(effectiveOwnerId, effectiveDate || null, selfPersonId, supervisorPersonId)
+        const { error } = await supabase.from('tasks').insert({ user_id: user.id, task: text.trim(), owner_id: effectiveOwnerId, owner: ownerName, due_date: effectiveDate || null, quadrant, done: false, starred: false, milestone_id: selectedMilestoneId || null })
         if (error) throw error
         setCaptureConfirm(`Routed to ${quadrant}`)
         await loadTaskCounts()
       }
       setTimeout(() => setCaptureConfirm(null), 2200)
-      setText(''); setOwnerId(''); setDate(format(new Date(), 'yyyy-MM-dd'))
+      setText(''); setOwnerId(''); setDate(format(new Date(), 'yyyy-MM-dd')); setDateManuallySet(false)
+      setSelectedMilestoneId(null); setMilestoneSearch(''); setMilestoneDropdownOpen(false)
       textareaRef.current?.focus()
     } catch (e) {
       showToast(e.message, 'error')
@@ -285,6 +317,77 @@ export default function CapturePage() {
           />
         </div>
 
+        {/* Milestone field */}
+        {(() => {
+          const todayStr = format(new Date(), 'yyyy-MM-dd')
+          const filteredMs = milestoneSearch
+            ? weeklyMilestones.filter(m => m.text.toLowerCase().includes(milestoneSearch.toLowerCase()))
+            : weeklyMilestones
+          const msGroups = Object.values(filteredMs.reduce((acc, m) => {
+            const key = m.aspiration_id || '_none'
+            if (!acc[key]) acc[key] = { aspText: m.aspirations?.text || 'No aspiration', areaName: m.aspirations?.areas?.name || null, items: [] }
+            acc[key].items.push(m)
+            return acc
+          }, {}))
+
+          function fmtDue(d) {
+            if (!d) return null
+            const dt = new Date(d + 'T00:00:00')
+            return format(dt, 'MMM d')
+          }
+
+          return (
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--content-border)' }}>
+              <label style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Milestone</label>
+              <div ref={milestoneDropdownRef} style={{ position: 'relative' }}>
+                <input
+                  value={milestoneSearch}
+                  onChange={e => { setMilestoneSearch(e.target.value); setSelectedMilestoneId(null); setMilestoneDropdownOpen(true) }}
+                  onFocus={() => setMilestoneDropdownOpen(true)}
+                  placeholder="Search weekly milestones…"
+                  className="w-full outline-none"
+                  style={{ border: `1px solid ${milestoneDropdownOpen ? 'var(--accent-green)' : 'var(--content-border)'}`, borderRadius: 'var(--radius-md)', padding: '9px 12px', paddingRight: selectedMilestoneId ? 32 : 12, background: 'var(--content-bg-card)', color: 'var(--ink)', fontFamily: 'var(--font-sans)', fontSize: '13px', width: '100%', boxSizing: 'border-box', transition: 'border-color 150ms' }}
+                />
+                {selectedMilestoneId && (
+                  <button
+                    onClick={() => { setSelectedMilestoneId(null); setMilestoneSearch(''); setMilestoneDropdownOpen(false) }}
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: '16px', lineHeight: 1, padding: 2 }}
+                  >×</button>
+                )}
+                {milestoneDropdownOpen && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', marginTop: 3, maxHeight: 240, overflowY: 'auto' }}>
+                    {msGroups.length === 0 && (
+                      <div style={{ padding: '12px', fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No milestones found</div>
+                    )}
+                    {msGroups.map((g, gi) => (
+                      <div key={gi}>
+                        <div style={{ padding: '6px 12px 2px', background: 'var(--content-bg)', position: 'sticky', top: 0, zIndex: 1 }}>
+                          {g.areaName && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', textTransform: 'uppercase', color: 'var(--ink-faint)', letterSpacing: '0.6px' }}>{g.areaName}</div>}
+                          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 500, color: 'var(--ink-soft)' }}>{g.aspText}</div>
+                        </div>
+                        {g.items.map(m => {
+                          const isOverdue = m.due_date && m.due_date < todayStr
+                          return (
+                            <div key={m.id}
+                              onClick={() => { setSelectedMilestoneId(m.id); setMilestoneSearch(m.text); setMilestoneDropdownOpen(false) }}
+                              style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'background 100ms' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--content-bg)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-coral)', flexShrink: 0 }} />
+                              <span style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', color: 'var(--ink)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{m.text}</span>
+                              {m.due_date && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: isOverdue ? 'var(--danger)' : 'var(--ink-faint)', flexShrink: 0 }}>{fmtDue(m.due_date)}</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Controls */}
         <div className="flex gap-3 flex-wrap items-center" style={{ padding: '12px 20px', background: 'var(--content-bg)' }}>
           <select
@@ -308,7 +411,7 @@ export default function CapturePage() {
           <input
             type="date"
             value={date}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => { setDate(e.target.value); setDateManuallySet(true) }}
             style={{ border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', background: 'var(--content-bg-card)', color: 'var(--ink)', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
           />
 
