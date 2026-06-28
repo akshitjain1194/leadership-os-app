@@ -475,9 +475,9 @@ export default function AspirationsPage() {
 
           return (
             <div key={m.id}>
-              <div style={{ display: 'flex', minHeight: 32, alignItems: 'center' }}>
+              <div style={{ display: 'flex', minHeight: 32, alignItems: 'flex-start' }}>
                 {/* Date cell */}
-                <div style={{ width: 72, paddingLeft: 18, paddingRight: 8, flexShrink: 0, textAlign: 'right' }}>
+                <div style={{ width: 72, paddingLeft: 18, paddingRight: 8, paddingTop: 7, flexShrink: 0, textAlign: 'right' }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: overdue ? 600 : 500, color: overdue ? '#dc2626' : (due ? DATE_COLOR[m.horizon] || 'var(--ink-faint)' : 'var(--ink-faint)') }}>
                     {due || '—'}
                   </span>
@@ -490,14 +490,14 @@ export default function AspirationsPage() {
                     <button onClick={() => setDeletingMsId(null)} style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--content-border)', cursor: 'pointer', fontSize: '12px', fontFamily: 'var(--font-sans)' }}>Cancel</button>
                   </div>
                 ) : (
-                  <div className="ms-row flex items-center gap-2 flex-1" style={{ borderLeft: '1px solid var(--content-border)', paddingLeft: 12 + indent, paddingRight: 6, height: 32, transition: 'background 150ms', cursor: 'default' }}>
+                  <div className="ms-row flex items-start gap-2 flex-1" style={{ borderLeft: '1px solid var(--content-border)', paddingLeft: 12 + indent, paddingRight: 6, minHeight: 32, paddingTop: 7, paddingBottom: 7, transition: 'background 150ms', cursor: 'default' }}>
                     {hasKids ? (
                       <button onClick={() => toggleMsExpand(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--ink-faint)', display: 'flex', flexShrink: 0 }}>
                         {isExp ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                       </button>
                     ) : <span style={{ width: 13, flexShrink: 0 }} />}
                     {badge && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 10, background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0 }}>{badge.label}</span>}
-                    <span title={m.text} onClick={m.horizon === 'Weekly' ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default' }}>{m.text}</span>
+                    <span onClick={m.horizon === 'Weekly' ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', color: 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default', lineHeight: 1.4 }}>{m.text}</span>
                     {anchor && <div title={anchor.name} style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>}
                     {showProg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: progColor, flexShrink: 0 }}>{prog}%</span>}
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
