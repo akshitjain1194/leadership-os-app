@@ -146,7 +146,6 @@ export default function AspirationsPage() {
 
   useEffect(() => { cachedData = null; fetchAll() }, [user.id])
 
-  // Click-outside + Escape
   useEffect(() => {
     if (!aspForm && !msForm && !openTaskPanel) return
     function onKey(e) {
@@ -161,12 +160,10 @@ export default function AspirationsPage() {
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onMouse) }
   }, [aspForm, msForm, openTaskPanel])
 
-  // Close task panel when any form opens
   useEffect(() => {
     if (aspForm || msForm) { setOpenTaskPanel(null); setTaskSearch('') }
   }, [aspForm, msForm])
 
-  // Progress calculation
   const progressMap = useMemo(() => {
     const cache = {}
     function calc(id, horizon, depth) {
@@ -191,7 +188,6 @@ export default function AspirationsPage() {
     return cache
   }, [milestones, tasks, aspirations])
 
-  // ── Aspiration CRUD ──
   function openAddAsp() {
     const today = toDateStr(new Date())
     setAspForm({ text: '', area_id: '', horizon_years: 3, start_date: today, end_date: computeEndDate(today, 3) })
@@ -226,7 +222,6 @@ export default function AspirationsPage() {
     else { showToast('Aspiration deleted', 'success'); setDeletingAspId(null); invalidateCache(); await fetchAll() }
   }
 
-  // ── Milestone CRUD ──
   function openAddMs(aspirationId, parentId, horizon) {
     setMsForm({ aspirationId, parentMilestoneId: parentId, horizon, text: '', due_date: '', anchor_person_id: '', status: 'Active' })
     if (parentId) setExpandedMs(prev => new Set(prev).add(parentId))
@@ -265,7 +260,6 @@ export default function AspirationsPage() {
     }
   }
 
-  // ── Task linking ──
   async function linkTask(taskId, milestoneId) {
     const { error } = await supabase.from('tasks').update({ milestone_id: milestoneId }).eq('id', taskId).eq('user_id', user.id)
     if (error) showToast(error.message, 'error')
@@ -281,7 +275,6 @@ export default function AspirationsPage() {
   function toggleMsExpand(id) { setExpandedMs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleAreaCollapse(id) { setCollapsedAreas(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
 
-  // ── Area CRUD ──
   async function addArea() {
     const name = areaInput.trim()
     if (!name) return
@@ -307,7 +300,6 @@ export default function AspirationsPage() {
     else { showToast('Area updated', 'success'); setAreaDropdownAspId(null); invalidateCache(); await fetchAll() }
   }
 
-  // ── Grouped aspirations ──
   const ownAspirations = useMemo(() => aspirations.filter(a => a.user_id === user.id), [aspirations, user.id])
   const sharedAspirations = useMemo(() => aspirations.filter(a => a.user_id !== user.id), [aspirations, user.id])
 
@@ -331,8 +323,6 @@ export default function AspirationsPage() {
     return { byParent, hasChild }
   }, [milestones])
 
-
-  // ── Milestone form UI ──
   function renderMsForm() {
     if (!msForm) return null
     const indent = { Annual: 0, SixMonth: 24, Monthly: 48, Weekly: 72 }[msForm.horizon] || 0
@@ -367,7 +357,6 @@ export default function AspirationsPage() {
     )
   }
 
-  // ── Task detail panel for Weekly milestones ──
   const QUAD_BADGE = {
     'Do Now':    { bg: 'var(--accent-coral-light)', color: 'var(--accent-coral)' },
     'Do Soon':   { bg: 'var(--accent-gold-light)',  color: 'var(--accent-gold)' },
@@ -387,7 +376,6 @@ export default function AspirationsPage() {
 
     return (
       <div style={{ background: 'var(--content-bg)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '14px 16px', margin: '4px 0' }}>
-        {/* Linked tasks */}
         <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>Linked tasks</div>
         {linked.length === 0 ? (
           <p style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 12 }}>No tasks linked yet</p>
@@ -407,7 +395,6 @@ export default function AspirationsPage() {
           </div>
         )}
 
-        {/* Link a task */}
         <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>Link a task</div>
         <input value={taskSearch} onChange={e => setTaskSearch(e.target.value)} placeholder="Search tasks…" className="w-full outline-none" style={{ ...inputStyle, width: '100%', fontSize: '12px', marginBottom: 4 }} />
         <div style={{ maxHeight: 160, overflowY: 'auto' }}>
@@ -430,7 +417,6 @@ export default function AspirationsPage() {
           )}
         </div>
 
-        {/* Progress note */}
         <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--content-border)', fontSize: '11px', color: 'var(--ink-faint)' }}>
           <div>Progress updates automatically as linked tasks are completed</div>
           <div style={{ marginTop: 2 }}>Current progress: <span style={{ fontWeight: 600, color: prog > 0 ? 'var(--accent-green)' : 'var(--ink-faint)' }}>{prog}%</span></div>
@@ -439,7 +425,6 @@ export default function AspirationsPage() {
     )
   }
 
-  // ── Milestone tree (timeline layout) ──
   const INDENT = { Annual: 0, SixMonth: 20, Monthly: 40, Weekly: 60 }
   const DATE_COLOR = { Annual: '#2d6a4f', SixMonth: '#185fa5', Monthly: '#c8982a', Weekly: '#e07a5f' }
 
@@ -469,20 +454,19 @@ export default function AspirationsPage() {
           const anchor = m.anchor_person_id ? people.find(p => p.id === m.anchor_person_id) : null
           const badge = HORIZON_BADGE[m.horizon]
           const dotColor = STATUS_DOT[m.status] || STATUS_DOT.Active
+          const isDone = m.status === 'Done'
           const progColor = overdue && prog < 25 ? 'var(--danger)' : prog > 50 ? 'var(--accent-green)' : 'var(--ink-faint)'
           const linkedTasks = m.horizon === 'Weekly' ? tasks.filter(t => t.milestone_id === m.id) : []
           const linkedDone = linkedTasks.filter(t => t.done).length
 
           return (
             <div key={m.id}>
-              <div style={{ display: 'flex', minHeight: 32, alignItems: 'flex-start' }}>
-                {/* Date cell */}
+              <div style={{ display: 'flex', minHeight: 32, alignItems: 'flex-start', background: isDone ? 'rgba(156,163,175,0.08)' : 'transparent', borderRadius: isDone ? 4 : 0 }}>
                 <div style={{ width: 72, paddingLeft: 18, paddingRight: 8, paddingTop: 7, flexShrink: 0, textAlign: 'right' }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: overdue ? 600 : 500, color: overdue ? '#dc2626' : (due ? DATE_COLOR[m.horizon] || 'var(--ink-faint)' : 'var(--ink-faint)') }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: overdue ? 600 : 500, color: isDone ? 'var(--ink-faint)' : overdue ? '#dc2626' : (due ? DATE_COLOR[m.horizon] || 'var(--ink-faint)' : 'var(--ink-faint)') }}>
                     {due || '—'}
                   </span>
                 </div>
-                {/* Content cell */}
                 {deletingMsId === m.id ? (
                   <div className="flex items-center gap-2 flex-1" style={{ borderLeft: '1px solid var(--content-border)', paddingLeft: 12 + indent, height: 32, fontSize: '12px' }}>
                     <span style={{ color: 'var(--ink-soft)', flex: 1 }}>Delete &ldquo;{m.text.length > 30 ? m.text.slice(0, 30) + '…' : m.text}&rdquo;?</span>
@@ -497,7 +481,7 @@ export default function AspirationsPage() {
                       </button>
                     ) : <span style={{ width: 13, flexShrink: 0 }} />}
                     {badge && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 10, background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0 }}>{badge.label}</span>}
-                    <span onClick={m.horizon === 'Weekly' ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', color: 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default', lineHeight: 1.4 }}>{m.text}</span>
+                    <span onClick={m.horizon === 'Weekly' ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', color: isDone ? 'var(--ink-faint)' : 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default', lineHeight: 1.4, textDecoration: isDone ? 'line-through' : 'none', opacity: isDone ? 0.65 : 1 }}>{m.text}</span>
                     {anchor && <div title={anchor.name} style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>}
                     {showProg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: progColor, flexShrink: 0 }}>{prog}%</span>}
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
@@ -525,7 +509,6 @@ export default function AspirationsPage() {
     )
   }
 
-  // ── Journey view ──
   function renderJourney(a) {
     const aspMilestones = milestones.filter(m => m.aspiration_id === a.id)
 
@@ -583,16 +566,13 @@ export default function AspirationsPage() {
         </div>
 
         <div style={{ position: 'relative' }}>
-          {/* Vertical spine */}
           <div style={{ position: 'absolute', left: '20px', top: 0, bottom: 0, width: '2px', background: 'var(--content-border)' }} />
 
-          {/* START stop */}
           <div style={{ position: 'relative', paddingLeft: '52px', paddingBottom: '24px' }}>
             <div style={{ position: 'absolute', left: '15px', top: '4px', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--ink-faint)' }} />
             <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)' }}>Now · {prog}% complete</span>
           </div>
 
-          {/* Monthly + SixMonth stops in chronological order */}
           {stops.map(m => {
             const label = ml(m.due_date)
             const initials = ai(m)
@@ -616,7 +596,7 @@ export default function AspirationsPage() {
                     {weeklyKids.length > 0 && (
                       <div className="flex flex-wrap gap-1" style={{ marginTop: '8px' }}>
                         {weeklyKids.map(w => (
-                          <span key={w.id} style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '2px 8px', borderRadius: '20px', background: '#fde8e3', color: '#993c1d' }}>
+                          <span key={w.id} style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '2px 8px', borderRadius: '20px', background: w.status === 'Done' ? 'rgba(156,163,175,0.15)' : '#fde8e3', color: w.status === 'Done' ? 'var(--ink-faint)' : '#993c1d', textDecoration: w.status === 'Done' ? 'line-through' : 'none', opacity: w.status === 'Done' ? 0.7 : 1 }}>
                             {w.text.length > 25 ? w.text.slice(0, 25) + '…' : w.text}
                           </span>
                         ))}
@@ -649,7 +629,6 @@ export default function AspirationsPage() {
             return null
           })}
 
-          {/* Annual goal stops */}
           {annuals.map(m => {
             const label = ml(m.due_date)
             const initials = ai(m)
@@ -676,7 +655,6 @@ export default function AspirationsPage() {
     )
   }
 
-  // ── Render aspiration card ──
   function renderCard(a) {
     const areaObj = areas.find(ar => ar.id === a.area_id)
     const aName = areaObj?.name || null
@@ -699,7 +677,6 @@ export default function AspirationsPage() {
           </div>
         ) : (
           <>
-            {/* Header — clickable to expand */}
             <div onClick={() => toggleAspExpand(a.id)} className="flex items-center gap-3" style={{ padding: '12px 18px', cursor: 'pointer' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="flex items-center gap-2">
@@ -725,11 +702,9 @@ export default function AspirationsPage() {
               </div>
             </div>
 
-            {/* Body — rendered when expanded or in Journey view */}
             {(isExpanded || journeyAspirationId === a.id) && (
               journeyAspirationId === a.id ? renderJourney(a) : (
               <div style={{ borderTop: '1px solid var(--content-border)', padding: '10px 0' }}>
-                {/* Area reassign dropdown — own only */}
                 {!isSharedAsp && (
                 <div style={{ padding: '0 18px 6px', position: 'relative', display: 'inline-block' }}>
                   <div onClick={() => setAreaDropdownAspId(areaDropdownAspId === a.id ? null : a.id)} style={{ cursor: 'pointer' }} className="flex items-center gap-1">
@@ -750,10 +725,8 @@ export default function AspirationsPage() {
                 </div>
                 )}
 
-                {/* Timeline tree */}
                 {renderTree(a.id, null, 'Annual')}
 
-                {/* Empty + add button — own only */}
                 {!isSharedAsp && !hasAnn && !(msForm && !msForm.id && msForm.aspirationId === a.id && !msForm.parentMilestoneId) && (
                   <p style={{ fontSize: '12px', color: 'var(--ink-faint)', fontStyle: 'italic', padding: '6px 18px' }}>No milestones yet — add an Annual Milestone to start</p>
                 )}
@@ -773,7 +746,6 @@ export default function AspirationsPage() {
     )
   }
 
-  // ── Render area section ──
   function renderAreaSection(areaId, label, color, asps, idx) {
     const isCollapsed = collapsedAreas.has(areaId)
     return (
@@ -792,10 +764,8 @@ export default function AspirationsPage() {
     )
   }
 
-  // ── Main render ──
   return (
     <div className="page-pad flex flex-col gap-7">
-      {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '28px', color: 'var(--ink)', marginBottom: '4px' }}>Aspirations</h1>
@@ -810,7 +780,6 @@ export default function AspirationsPage() {
         </div>
       </div>
 
-      {/* Area filter pills */}
       {areas.length > 0 && (
         <div className="flex gap-2" style={{ overflowX: 'auto', paddingBottom: 4, flexWrap: 'nowrap' }}>
           <button onClick={() => setAreaFilter(null)} style={{ padding: '4px 14px', borderRadius: 20, fontSize: '12px', fontFamily: 'var(--font-sans)', fontWeight: !areaFilter ? 500 : 400, background: !areaFilter ? 'var(--accent-coral)' : 'transparent', color: !areaFilter ? 'white' : 'var(--ink-faint)', border: `1.5px solid ${!areaFilter ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>All</button>
@@ -825,7 +794,6 @@ export default function AspirationsPage() {
         </div>
       )}
 
-      {/* Manage Areas panel */}
       {areasPanel && (
         <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', position: 'relative' }}>
           <button onClick={() => setAreasPanel(false)} style={{ position: 'absolute', top: 14, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 2 }}><X size={16} /></button>
@@ -866,7 +834,6 @@ export default function AspirationsPage() {
         </div>
       )}
 
-      {/* Aspiration form */}
       {aspForm && (
         <div ref={aspFormRef} style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px' }}>
           <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.8px' }}>{aspForm.id ? 'Edit aspiration' : 'New aspiration'}</div>
@@ -898,10 +865,8 @@ export default function AspirationsPage() {
         </div>
       )}
 
-      {/* Loading */}
       {loading && <div className="flex flex-col gap-4">{[1, 2, 3].map(i => <SkeletonCard key={i} />)}</div>}
 
-      {/* Empty state */}
       {!loading && !aspirations.length && (
         <div className="flex flex-col items-center gap-4 py-16 px-6 text-center" style={{ borderRadius: 'var(--radius-lg)', background: 'var(--content-bg-card)', border: '1.5px dashed var(--content-border-strong)' }}>
           <Target size={48} style={{ color: 'var(--ink-faint)', opacity: 0.5 }} />
@@ -913,7 +878,6 @@ export default function AspirationsPage() {
         </div>
       )}
 
-      {/* Shared aspirations */}
       {!loading && sharedAspirations.length > 0 && !areaFilter && (
         <div>
           <div className="flex items-center gap-2" style={{ marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--content-border)' }}>
@@ -925,7 +889,6 @@ export default function AspirationsPage() {
         </div>
       )}
 
-      {/* Own aspiration cards grouped by area */}
       {!loading && ownAspirations.length > 0 && (
         <div>
           {areaGroups.groups
