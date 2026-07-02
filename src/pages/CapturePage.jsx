@@ -50,14 +50,17 @@ export default function CapturePage() {
   }, [milestoneDropdownOpen])
 
   async function loadMilestones() {
-    const { data } = await supabase
+    const { data: all } = await supabase
       .from('milestones')
-      .select('id, text, aspiration_id, due_date, anchor_person_id, aspirations(text, areas(name))')
+      .select('id, text, aspiration_id, horizon, due_date, anchor_person_id, parent_milestone_id, aspirations(text, areas(name))')
       .eq('user_id', user.id)
-      .eq('horizon', 'Weekly')
+      .in('horizon', ['Weekly', 'Monthly'])
       .not('status', 'eq', 'Done')
       .order('due_date', { ascending: true, nullsFirst: false })
-    setWeeklyMilestones(data || [])
+    const allMs = all || []
+    const weeklyParentIds = new Set(allMs.filter(m => m.horizon === 'Weekly').map(m => m.parent_milestone_id).filter(Boolean))
+    const linkable = allMs.filter(m => m.horizon === 'Weekly' || (m.horizon === 'Monthly' && !weeklyParentIds.has(m.id)))
+    setWeeklyMilestones(linkable)
   }
 
   async function loadTaskLinkCounts() {

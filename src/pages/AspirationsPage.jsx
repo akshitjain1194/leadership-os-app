@@ -169,15 +169,18 @@ export default function AspirationsPage() {
     function calc(id, horizon, depth) {
       if (cache[id] !== undefined) return cache[id]
       if (depth > 5) return 0
+      const directTasks = tasks.filter(t => t.milestone_id === id)
       if (horizon === 'Weekly') {
-        const linked = tasks.filter(t => t.milestone_id === id)
-        if (!linked.length) return (cache[id] = 0)
-        return (cache[id] = (linked.filter(t => t.done).length / linked.length) * 100)
+        if (!directTasks.length) return (cache[id] = 0)
+        return (cache[id] = (directTasks.filter(t => t.done).length / directTasks.length) * 100)
       }
       const ch = CHILD_H[horizon]
       if (!ch) return (cache[id] = 0)
       const kids = milestones.filter(m => m.parent_milestone_id === id && m.horizon === ch)
-      if (!kids.length) return (cache[id] = 0)
+      if (!kids.length) {
+        if (!directTasks.length) return (cache[id] = 0)
+        return (cache[id] = (directTasks.filter(t => t.done).length / directTasks.length) * 100)
+      }
       return (cache[id] = kids.reduce((a, c) => a + calc(c.id, c.horizon, depth + 1), 0) / kids.length)
     }
     milestones.forEach(m => calc(m.id, m.horizon, 0))
@@ -456,7 +459,8 @@ export default function AspirationsPage() {
           const dotColor = STATUS_DOT[m.status] || STATUS_DOT.Active
           const isDone = m.status === 'Done'
           const progColor = overdue && prog < 25 ? 'var(--danger)' : prog > 50 ? 'var(--accent-green)' : 'var(--ink-faint)'
-          const linkedTasks = m.horizon === 'Weekly' ? tasks.filter(t => t.milestone_id === m.id) : []
+          const isTaskLinkable = m.horizon === 'Weekly' || (m.horizon === 'Monthly' && !msIndex.hasChild.has(m.id))
+          const linkedTasks = isTaskLinkable ? tasks.filter(t => t.milestone_id === m.id) : []
           const linkedDone = linkedTasks.filter(t => t.done).length
 
           return (
@@ -481,11 +485,11 @@ export default function AspirationsPage() {
                       </button>
                     ) : <span style={{ width: 13, flexShrink: 0 }} />}
                     {badge && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 10, background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0 }}>{badge.label}</span>}
-                    <span onClick={m.horizon === 'Weekly' ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', color: isDone ? 'var(--ink-faint)' : 'var(--ink)', cursor: m.horizon === 'Weekly' ? 'pointer' : 'default', lineHeight: 1.4, textDecoration: isDone ? 'line-through' : 'none', opacity: isDone ? 0.65 : 1 }}>{m.text}</span>
+                    <span onClick={isTaskLinkable ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', color: isDone ? 'var(--ink-faint)' : 'var(--ink)', cursor: isTaskLinkable ? 'pointer' : 'default', lineHeight: 1.4, textDecoration: isDone ? 'line-through' : 'none', opacity: isDone ? 0.65 : 1 }}>{m.text}</span>
                     {anchor && <div title={anchor.name} style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>}
                     {showProg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: progColor, flexShrink: 0 }}>{prog}%</span>}
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-                    {m.horizon === 'Weekly' && linkedTasks.length > 0 && (
+                    {isTaskLinkable && linkedTasks.length > 0 && (
                       <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: linkedDone === linkedTasks.length ? 'var(--accent-green-light)' : 'var(--content-bg)', border: '1px solid var(--content-border)', color: linkedDone === linkedTasks.length ? 'var(--accent-green)' : 'var(--ink-faint)', flexShrink: 0 }}>
                         {linkedTasks.length}t · {linkedDone}d
                       </span>
@@ -499,7 +503,7 @@ export default function AspirationsPage() {
                 )}
               </div>
               {isEditing && renderMsForm()}
-              {m.horizon === 'Weekly' && openTaskPanel === m.id && renderTaskPanel(m)}
+              {isTaskLinkable && openTaskPanel === m.id && renderTaskPanel(m)}
               {(isExp || hasAddChild) && nextH && renderTree(aspirationId, m.id, nextH)}
             </div>
           )
