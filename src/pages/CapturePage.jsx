@@ -218,7 +218,7 @@ export default function CapturePage() {
               value={milestoneSearch}
               onChange={e => { setMilestoneSearch(e.target.value); setSelectedMilestoneId(null); setMilestoneDropdownOpen(true) }}
               onFocus={() => setMilestoneDropdownOpen(true)}
-              placeholder="Search weekly milestones…"
+              placeholder="Search milestones…"
               className="w-full outline-none"
               style={{
                 border: `1px solid ${(milestoneDropdownOpen || selectedMilestoneId) ? 'var(--accent-green)' : 'var(--content-border)'}`,
