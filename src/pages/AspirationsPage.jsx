@@ -694,6 +694,7 @@ export default function AspirationsPage() {
                         {linkedTasks.length}t · {linkedDone}d
                       </span>
                     )}
+                    {renderPsmartBadge('ms', m)}
                     <div className="ms-actions flex items-center gap-1" style={{ flexShrink: 0 }}>
                       <button onClick={() => scoreItem('milestone', m.id, m.text, { horizon: m.horizon, due_date: m.due_date })}
                         disabled={psmartScoring.has(m.id)}
