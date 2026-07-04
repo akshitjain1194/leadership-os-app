@@ -308,6 +308,97 @@ export default function AspirationsPage() {
     }
   }
 
+  async function scorePsmart(kind, item) {
+    const key = `${kind}-${item.id}`
+    setPsmartScoring(prev => new Set(prev).add(key))
+    try {
+      const { data, error } = await supabase.functions.invoke('score-psmart', {
+        body: { text: item.text, horizon: item.horizon || null, due_date: item.due_date || item.end_date || null, type: kind === 'asp' ? 'aspiration' : 'milestone' },
+      })
+      if (error || data?.error) {
+        showToast(data?.error || error.message || 'Scoring failed', 'error')
+        return
+      }
+      const table = kind === 'asp' ? 'aspirations' : 'milestones'
+      const fields = { psmart_score: data.score, psmart_feedback: { dimensions: data.dimensions, overall_note: data.overall_note, suggested_rewrite: data.suggested_rewrite }, psmart_scored_at: new Date().toISOString() }
+      const { error: writeErr } = await supabase.from(table).update(fields).eq('id', item.id).eq('user_id', user.id)
+      if (writeErr) { showToast(writeErr.message, 'error'); return }
+      if (kind === 'asp') setAspirations(prev => prev.map(a => a.id === item.id ? { ...a, ...fields } : a))
+      else setMilestones(prev => prev.map(m => m.id === item.id ? { ...m, ...fields } : m))
+      setOpenPsmartPanel(key)
+    } catch (e) {
+      showToast('Scoring failed', 'error')
+    } finally {
+      setPsmartScoring(prev => { const s = new Set(prev); s.delete(key); return s })
+    }
+  }
+
+  function psmartColor(score) {
+    if (score >= 8) return 'var(--accent-green)'
+    if (score >= 5) return 'var(--accent-gold)'
+    return '#dc2626'
+  }
+
+  function renderPsmartBadge(kind, item) {
+    const key = `${kind}-${item.id}`
+    const scoring = psmartScoring.has(key)
+    if (scoring) return <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)', flexShrink: 0 }}>scoring...</span>
+    if (item.psmart_score == null) {
+      return (
+        <button onClick={(e) => { e.stopPropagation(); scorePsmart(kind, item) }} style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 8, background: 'transparent', border: '1px dashed var(--content-border)', color: 'var(--ink-faint)', cursor: 'pointer', flexShrink: 0 }}>
+          PSMART?
+        </button>
+      )
+    }
+    return (
+      <button onClick={(e) => { e.stopPropagation(); setOpenPsmartPanel(openPsmartPanel === key ? null : key) }} title="View PSMART feedback" style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'transparent', border: `1px solid ${psmartColor(item.psmart_score)}`, color: psmartColor(item.psmart_score), cursor: 'pointer', flexShrink: 0 }}>
+        {item.psmart_score}/10
+      </button>
+    )
+  }
+
+  const DIM_LABEL = { performance: 'Performance', specific: 'Specific', measurable: 'Measurable', achievable: 'Achievable', relevant: 'Relevant', time_bound: 'Time-bound' }
+  const RATING_COLOR = { strong: 'var(--accent-green)', partial: 'var(--accent-gold)', weak: '#dc2626' }
+
+  function renderPsmartPanel(kind, item) {
+    const key = `${kind}-${item.id}`
+    if (openPsmartPanel !== key || !item.psmart_feedback) return null
+    const fb = item.psmart_feedback
+    return (
+      <div style={{ background: 'var(--content-bg)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '14px 16px', margin: '4px 0' }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+          <div className="flex items-center gap-2">
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', color: psmartColor(item.psmart_score) }}>{item.psmart_score}/10</span>
+            <span style={{ fontSize: '11px', color: 'var(--ink-faint)' }}>PSMART score</span>
+          </div>
+          <button onClick={() => scorePsmart(kind, item)} style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)', background: 'none', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '3px 8px', cursor: 'pointer' }}>Re-score</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 12 }}>
+          {Object.entries(DIM_LABEL).map(([k, label]) => {
+            const d = fb.dimensions?.[k]
+            if (!d) return null
+            return (
+              <div key={k} style={{ fontSize: '11.5px' }}>
+                <div className="flex items-center gap-1" style={{ marginBottom: 1 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: RATING_COLOR[d.rating] || 'var(--ink-faint)', flexShrink: 0 }} />
+                  <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
+                </div>
+                <div style={{ color: 'var(--ink-faint)', lineHeight: 1.4 }}>{d.note}</div>
+              </div>
+            )
+          })}
+        </div>
+        {fb.overall_note && <p style={{ fontSize: '12px', color: 'var(--ink-soft)', lineHeight: 1.5, marginBottom: 10, fontStyle: 'italic' }}>{fb.overall_note}</p>}
+        {fb.suggested_rewrite && (
+          <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--ink-faint)', marginBottom: 4 }}>Suggested rewrite</div>
+            <p style={{ fontSize: '12.5px', color: 'var(--ink)', lineHeight: 1.5 }}>{fb.suggested_rewrite}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   function toggleAspExpand(id) { setExpandedAsps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleMsExpand(id) { setExpandedMs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleAreaCollapse(id) { setCollapsedAreas(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
