@@ -710,6 +710,7 @@ export default function AspirationsPage() {
                 )}
               </div>
               {isEditing && renderMsForm()}
+              {renderPsmartPanel('ms', m)}
               {isTaskLinkable && openTaskPanel === m.id && renderTaskPanel(m)}
               {openPsmartPanel === 'ms-' + m.id && renderScorePanel(m, 'milestone')}
               {(isExp || hasAddChild) && nextH && renderTree(aspirationId, m.id, nextH)}
