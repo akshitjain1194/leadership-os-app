@@ -34,6 +34,45 @@ Respond with ONLY valid JSON, no markdown fences, no preamble, in this exact sha
 
 Be direct and specific in notes — name the actual weakness in this text, don't give generic advice. Keep notes under 20 words each.`;
 
+async function callGemini(apiKey: string, userMessage: string) {
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        generationConfig: {
+          maxOutputTokens: 4096,
+          temperature: 0.4,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      }),
+    }
+  );
+
+  if (!geminiRes.ok) {
+    const errText = await geminiRes.text();
+    throw { kind: "api", detail: errText };
+  }
+
+  const data = await geminiRes.json();
+  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  const cleaned = firstBrace !== -1 && lastBrace !== -1
+    ? raw.slice(firstBrace, lastBrace + 1)
+    : raw.replace(/^```json\s*|```$/g, "").trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    throw { kind: "parse", raw: cleaned };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -64,36 +103,26 @@ Text: "${text}"
 
 Score this against PSMART. Respond with JSON only.`;
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ role: "user", parts: [{ text: userMessage }] }],
-          generationConfig: { maxOutputTokens: 700, temperature: 0.4 },
-        }),
+    let parsed;
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        parsed = await callGemini(apiKey, userMessage);
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
       }
-    );
-
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      return new Response(JSON.stringify({ error: "Gemini API error", detail: errText }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
     }
 
-    const data = await geminiRes.json();
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-    const cleaned = raw.replace(/^```json\s*|```$/g, "").trim();
-
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      return new Response(JSON.stringify({ error: "Failed to parse model output", raw: cleaned }), {
+    if (lastError) {
+      if (lastError.kind === "api") {
+        return new Response(JSON.stringify({ error: "Gemini API error", detail: lastError.detail }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "Failed to parse model output", raw: lastError.raw }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
