@@ -211,10 +211,14 @@ export default function ThisWeekPage() {
   const doneTasks = liveTasks.filter(t => t.done)
   const starred = liveTasks.filter(t => t.starred && !t.done)
 
+  // Weekly + Monthly milestones without weekly children are linkable
+  const weeklyParentIds = new Set(milestones.filter(m => m.horizon === 'Weekly').map(m => m.parent_milestone_id).filter(Boolean))
+  const linkableMilestones = milestones.filter(m => m.horizon === 'Weekly' || (m.horizon === 'Monthly' && !weeklyParentIds.has(m.id)))
+
   // ── Milestone picker ──
   function renderMsPicker(task) {
     const linked = task.milestone_id ? milestones.find(m => m.id === task.milestone_id) : null
-    const available = milestones.filter(m => m.id !== task.milestone_id)
+    const available = linkableMilestones.filter(m => m.id !== task.milestone_id)
     const filtered = msPickerSearch ? available.filter(m => m.text.toLowerCase().includes(msPickerSearch.toLowerCase())) : available
 
     return (
@@ -227,11 +231,11 @@ export default function ThisWeekPage() {
             <button onClick={() => handleUnlinkMs(task.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--accent-green)' }}><X size={12} /></button>
           </div>
         )}
-        <input value={msPickerSearch} onChange={e => setMsPickerSearch(e.target.value)} placeholder="Search weekly milestones…" className="w-full outline-none"
+        <input value={msPickerSearch} onChange={e => setMsPickerSearch(e.target.value)} placeholder="Search milestones…" className="w-full outline-none"
           style={{ border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '6px 8px', fontSize: '12px', fontFamily: 'var(--font-sans)', marginBottom: 4, background: 'var(--content-bg)', color: 'var(--ink)' }} />
         <div style={{ maxHeight: 140, overflowY: 'auto' }}>
           {filtered.length === 0 ? (
-            <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 0' }}>{msPickerSearch ? 'No matching milestones' : 'No weekly milestones available'}</p>
+            <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 0' }}>{msPickerSearch ? 'No matching milestones' : 'No milestones available'}</p>
           ) : filtered.map(m => (
             <div key={m.id} onClick={() => handleLinkMs(task.id, m.id)}
               style={{ padding: '5px 6px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', transition: 'background 100ms' }}
@@ -250,7 +254,7 @@ export default function ThisWeekPage() {
   function renderEditPanel() {
     if (!editForm) return null
     const selectedMs = editForm.milestone_id ? milestones.find(m => m.id === editForm.milestone_id) : null
-    const filteredMs = editMsSearch ? milestones.filter(m => m.text.toLowerCase().includes(editMsSearch.toLowerCase())) : milestones
+    const filteredMs = editMsSearch ? linkableMilestones.filter(m => m.text.toLowerCase().includes(editMsSearch.toLowerCase())) : linkableMilestones
     const labelSt = { fontSize: '10px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 4, display: 'block' }
     const fieldSt = { border: '1.5px solid var(--content-border)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', background: 'var(--content-bg-card)', color: 'var(--ink)', fontFamily: 'var(--font-sans)', fontSize: '13px', outline: 'none', width: '100%' }
 
@@ -279,36 +283,38 @@ export default function ThisWeekPage() {
               {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
+        </div>
 
+        <div style={{ display: ‘grid’, gridTemplateColumns: ‘1fr auto’, gap: ‘14px 20px’, marginTop: 14, alignItems: ‘start’ }}>
           <div>
             <label style={labelSt}>Milestone</label>
             <div className="flex items-center" style={fieldSt}>
               <input
-                value={editMsOpen ? editMsSearch : (selectedMs?.text || '')}
+                value={editMsOpen ? editMsSearch : (selectedMs?.text || ‘’)}
                 onChange={e => { setEditMsSearch(e.target.value); if (!editMsOpen) setEditMsOpen(true) }}
-                onFocus={() => { setEditMsOpen(true); setEditMsSearch('') }}
+                onFocus={() => { setEditMsOpen(true); setEditMsSearch(‘’) }}
                 onBlur={() => setTimeout(() => setEditMsOpen(false), 150)}
                 placeholder="Search milestones…"
                 className="flex-1 outline-none"
-                style={{ border: 'none', background: 'transparent', fontSize: '13px', color: 'var(--ink)', padding: 0, fontFamily: 'var(--font-sans)' }} />
-              {selectedMs && !editMsOpen && <button onClick={() => setEditForm(p => ({ ...p, milestone_id: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 1, color: 'var(--ink-faint)', flexShrink: 0, display: 'flex' }}><X size={12} /></button>}
+                style={{ border: ‘none’, background: ‘transparent’, fontSize: ‘13px’, color: ‘var(--ink)’, padding: 0, fontFamily: ‘var(--font-sans)’ }} />
+              {selectedMs && !editMsOpen && <button onClick={() => setEditForm(p => ({ ...p, milestone_id: ‘’ }))} style={{ background: ‘none’, border: ‘none’, cursor: ‘pointer’, padding: 1, color: ‘var(--ink-faint)’, flexShrink: 0, display: ‘flex’ }}><X size={12} /></button>}
             </div>
             {editMsOpen && (
-              <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', marginTop: 2, maxHeight: 150, overflowY: 'auto' }}>
-                <div onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: '' })); setEditMsSearch(''); setEditMsOpen(false) }}
-                  style={{ padding: '6px 8px', cursor: 'pointer', fontSize: '13px', color: 'var(--ink-faint)', borderBottom: '1px solid var(--content-border)', transition: 'background 100ms' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>No milestone</div>
+              <div style={{ background: ‘var(--content-bg-card)’, border: ‘1px solid var(--content-border)’, borderRadius: ‘var(--radius-sm)’, marginTop: 2, maxHeight: 150, overflowY: ‘auto’ }}>
+                <div onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: ‘’ })); setEditMsSearch(‘’); setEditMsOpen(false) }}
+                  style={{ padding: ‘6px 8px’, cursor: ‘pointer’, fontSize: ‘13px’, color: ‘var(--ink-faint)’, borderBottom: ‘1px solid var(--content-border)’, transition: ‘background 100ms’ }}
+                  onMouseEnter={e => (e.currentTarget.style.background = ‘rgba(0,0,0,0.04)’)}
+                  onMouseLeave={e => (e.currentTarget.style.background = ‘transparent’)}>No milestone</div>
                 {filteredMs.map(m => (
-                  <div key={m.id} onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: m.id })); setEditMsSearch(''); setEditMsOpen(false) }}
-                    style={{ padding: '6px 8px', cursor: 'pointer', transition: 'background 100ms' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <div style={{ fontSize: '13px', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.text}</div>
-                    {m.aspirations?.text && <div style={{ fontSize: '11px', color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.aspirations.text}</div>}
+                  <div key={m.id} onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: m.id })); setEditMsSearch(‘’); setEditMsOpen(false) }}
+                    style={{ padding: ‘6px 8px’, cursor: ‘pointer’, transition: ‘background 100ms’ }}
+                    onMouseEnter={e => (e.currentTarget.style.background = ‘rgba(0,0,0,0.04)’)}
+                    onMouseLeave={e => (e.currentTarget.style.background = ‘transparent’)}>
+                    <div style={{ fontSize: ‘13px’, color: ‘var(--ink)’, overflow: ‘hidden’, textOverflow: ‘ellipsis’, whiteSpace: ‘nowrap’ }}>{m.text}</div>
+                    {m.aspirations?.text && <div style={{ fontSize: ‘11px’, color: ‘var(--ink-faint)’, marginTop: 1, overflow: ‘hidden’, textOverflow: ‘ellipsis’, whiteSpace: ‘nowrap’ }}>{m.aspirations.text}</div>}
                   </div>
                 ))}
-                {filteredMs.length === 0 && editMsSearch && <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 8px' }}>No milestones found</p>}
+                {filteredMs.length === 0 && editMsSearch && <p style={{ fontSize: ‘11px’, color: ‘var(--ink-faint)’, padding: ‘6px 8px’ }}>No milestones found</p>}
               </div>
             )}
           </div>
@@ -316,11 +322,11 @@ export default function ThisWeekPage() {
           <div>
             <label style={labelSt}>Priority</label>
             <button onClick={toggleEditStar} style={{
-              padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontSize: '13px', fontFamily: 'var(--font-sans)', fontWeight: 500, width: '100%', textAlign: 'center',
-              background: editForm.starred ? 'var(--accent-coral)' : 'transparent',
-              color: editForm.starred ? 'white' : 'var(--ink-faint)',
-              border: `1px solid ${editForm.starred ? 'var(--accent-coral)' : 'var(--content-border)'}`,
-            }}>{editForm.starred ? '★ In today’s focus' : '☆ Add to focus'}</button>
+              padding: ‘7px 16px’, borderRadius: 20, cursor: ‘pointer’, fontSize: ‘12.5px’, fontFamily: ‘var(--font-sans)’, fontWeight: 500, whiteSpace: ‘nowrap’,
+              background: editForm.starred ? ‘var(--accent-coral)’ : ‘transparent’,
+              color: editForm.starred ? ‘white’ : ‘var(--ink-faint)’,
+              border: `1px solid ${editForm.starred ? ‘var(--accent-coral)’ : ‘var(--content-border)’}`,
+            }}>{editForm.starred ? ‘★ In today’s focus’ : ‘☆ Add to focus’}</button>
           </div>
         </div>
 
