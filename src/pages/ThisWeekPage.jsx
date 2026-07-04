@@ -266,13 +266,13 @@ export default function ThisWeekPage() {
         <input value={editForm.task} onChange={e => setEditForm(p => ({ ...p, task: e.target.value }))}
           style={{ width: '100%', border: 'none', borderBottom: '1px solid var(--content-border)', padding: '4px 0 8px', fontSize: '14px', fontFamily: 'var(--font-sans)', color: 'var(--ink)', outline: 'none', background: 'transparent' }} />
 
-        <div style={{ display: ‘grid’, gridTemplateColumns: ‘1fr 1fr auto’, gap: ‘14px 20px’, marginTop: 12, alignItems: ‘end’ }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '14px 20px', marginTop: 12, alignItems: 'end' }}>
           <div>
             <label style={labelSt}>Due date</label>
             <div className="flex items-center gap-1">
               <input type="date" value={editForm.due_date} onChange={e => setEditForm(p => ({ ...p, due_date: e.target.value }))}
-                style={{ ...fieldSt, flex: 1, fontFamily: ‘var(--font-mono)’ }} />
-              {editForm.due_date && <button onClick={() => setEditForm(p => ({ ...p, due_date: ‘’ }))} style={{ background: ‘none’, border: ‘none’, cursor: ‘pointer’, padding: 2, color: ‘var(--ink-faint)’, flexShrink: 0, display: ‘flex’ }}><X size={12} /></button>}
+                style={{ ...fieldSt, flex: 1, fontFamily: 'var(--font-mono)' }} />
+              {editForm.due_date && <button onClick={() => setEditForm(p => ({ ...p, due_date: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)', flexShrink: 0, display: 'flex' }}><X size={12} /></button>}
             </div>
           </div>
 
@@ -287,11 +287,11 @@ export default function ThisWeekPage() {
           <div>
             <label style={labelSt}>Priority</label>
             <button onClick={toggleEditStar} style={{
-              padding: ‘7px 16px’, borderRadius: 20, cursor: ‘pointer’, fontSize: ‘12.5px’, fontFamily: ‘var(--font-sans)’, fontWeight: 500, whiteSpace: ‘nowrap’,
-              background: editForm.starred ? ‘var(--accent-coral)’ : ‘transparent’,
-              color: editForm.starred ? ‘white’ : ‘var(--ink-faint)’,
-              border: `1px solid ${editForm.starred ? ‘var(--accent-coral)’ : ‘var(--content-border)’}`,
-            }}>{editForm.starred ? ‘★ In today’s focus’ : ‘☆ Add to focus’}</button>
+              padding: '7px 16px', borderRadius: 20, cursor: 'pointer', fontSize: '12.5px', fontFamily: 'var(--font-sans)', fontWeight: 500, whiteSpace: 'nowrap',
+              background: editForm.starred ? 'var(--accent-coral)' : 'transparent',
+              color: editForm.starred ? 'white' : 'var(--ink-faint)',
+              border: `1px solid ${editForm.starred ? 'var(--accent-coral)' : 'var(--content-border)'}`,
+            }}>{editForm.starred ? "★ In today's focus" : "☆ Add to focus"}</button>
           </div>
         </div>
 
@@ -299,31 +299,31 @@ export default function ThisWeekPage() {
           <label style={labelSt}>Milestone</label>
           <div className="flex items-center" style={fieldSt}>
             <input
-              value={editMsOpen ? editMsSearch : (selectedMs?.text || ‘’)}
+              value={editMsOpen ? editMsSearch : (selectedMs?.text || '')}
               onChange={e => { setEditMsSearch(e.target.value); if (!editMsOpen) setEditMsOpen(true) }}
-              onFocus={() => { setEditMsOpen(true); setEditMsSearch(‘’) }}
+              onFocus={() => { setEditMsOpen(true); setEditMsSearch('') }}
               onBlur={() => setTimeout(() => setEditMsOpen(false), 150)}
               placeholder="Search milestones…"
               className="flex-1 outline-none"
-              style={{ border: ‘none’, background: ‘transparent’, fontSize: ‘13px’, color: ‘var(--ink)’, padding: 0, fontFamily: ‘var(--font-sans)’ }} />
-            {selectedMs && !editMsOpen && <button onClick={() => setEditForm(p => ({ ...p, milestone_id: ‘’ }))} style={{ background: ‘none’, border: ‘none’, cursor: ‘pointer’, padding: 1, color: ‘var(--ink-faint)’, flexShrink: 0, display: ‘flex’ }}><X size={12} /></button>}
+              style={{ border: 'none', background: 'transparent', fontSize: '13px', color: 'var(--ink)', padding: 0, fontFamily: 'var(--font-sans)' }} />
+            {selectedMs && !editMsOpen && <button onClick={() => setEditForm(p => ({ ...p, milestone_id: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 1, color: 'var(--ink-faint)', flexShrink: 0, display: 'flex' }}><X size={12} /></button>}
           </div>
           {editMsOpen && (
-            <div style={{ background: ‘var(--content-bg-card)’, border: ‘1px solid var(--content-border)’, borderRadius: ‘var(--radius-sm)’, marginTop: 2, maxHeight: 150, overflowY: ‘auto’ }}>
-              <div onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: ‘’ })); setEditMsSearch(‘’); setEditMsOpen(false) }}
-                style={{ padding: ‘6px 8px’, cursor: ‘pointer’, fontSize: ‘13px’, color: ‘var(--ink-faint)’, borderBottom: ‘1px solid var(--content-border)’, transition: ‘background 100ms’ }}
-                onMouseEnter={e => (e.currentTarget.style.background = ‘rgba(0,0,0,0.04)’)}
-                onMouseLeave={e => (e.currentTarget.style.background = ‘transparent’)}>No milestone</div>
+            <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-sm)', marginTop: 2, maxHeight: 150, overflowY: 'auto' }}>
+              <div onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: '' })); setEditMsSearch(''); setEditMsOpen(false) }}
+                style={{ padding: '6px 8px', cursor: 'pointer', fontSize: '13px', color: 'var(--ink-faint)', borderBottom: '1px solid var(--content-border)', transition: 'background 100ms' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>No milestone</div>
               {filteredMs.map(m => (
-                <div key={m.id} onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: m.id })); setEditMsSearch(‘’); setEditMsOpen(false) }}
-                  style={{ padding: ‘6px 8px’, cursor: ‘pointer’, transition: ‘background 100ms’ }}
-                  onMouseEnter={e => (e.currentTarget.style.background = ‘rgba(0,0,0,0.04)’)}
-                  onMouseLeave={e => (e.currentTarget.style.background = ‘transparent’)}>
-                  <div style={{ fontSize: ‘13px’, color: ‘var(--ink)’, overflow: ‘hidden’, textOverflow: ‘ellipsis’, whiteSpace: ‘nowrap’ }}>{m.text}</div>
-                  {m.aspirations?.text && <div style={{ fontSize: ‘11px’, color: ‘var(--ink-faint)’, marginTop: 1, overflow: ‘hidden’, textOverflow: ‘ellipsis’, whiteSpace: ‘nowrap’ }}>{m.aspirations.text}</div>}
+                <div key={m.id} onMouseDown={() => { setEditForm(p => ({ ...p, milestone_id: m.id })); setEditMsSearch(''); setEditMsOpen(false) }}
+                  style={{ padding: '6px 8px', cursor: 'pointer', transition: 'background 100ms' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <div style={{ fontSize: '13px', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.text}</div>
+                  {m.aspirations?.text && <div style={{ fontSize: '11px', color: 'var(--ink-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.aspirations.text}</div>}
                 </div>
               ))}
-              {filteredMs.length === 0 && editMsSearch && <p style={{ fontSize: ‘11px’, color: ‘var(--ink-faint)’, padding: ‘6px 8px’ }}>No milestones found</p>}
+              {filteredMs.length === 0 && editMsSearch && <p style={{ fontSize: '11px', color: 'var(--ink-faint)', padding: '6px 8px' }}>No milestones found</p>}
             </div>
           )}
         </div>
