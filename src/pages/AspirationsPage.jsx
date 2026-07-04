@@ -102,8 +102,8 @@ export default function AspirationsPage() {
   const [deletingMsId, setDeletingMsId] = useState(null)
   const [openTaskPanel, setOpenTaskPanel] = useState(null)
   const [taskSearch, setTaskSearch] = useState('')
-  const [scoringId, setScoringId] = useState(null)
-  const [scorePanelId, setScorePanelId] = useState(null)
+  const [openPsmartPanel, setOpenPsmartPanel] = useState(null) // `asp-{id}` or `ms-{id}`
+  const [psmartScoring, setPsmartScoring] = useState(new Set())
   const [taskPanelTasks, setTaskPanelTasks] = useState([])
   const [areasPanel, setAreasPanel] = useState(false)
   const [areaInput, setAreaInput] = useState('')
@@ -281,8 +281,9 @@ export default function AspirationsPage() {
   }
 
   async function scoreItem(itemType, itemId, text, context = {}) {
-    setScoringId(itemId)
-    setScorePanelId(itemId)
+    const panelKey = itemType === 'aspiration' ? 'asp-' + itemId : 'ms-' + itemId
+    setPsmartScoring(prev => new Set(prev).add(itemId))
+    setOpenPsmartPanel(panelKey)
     try {
       const { data, error } = await supabase.functions.invoke('score-psmart', {
         body: { text, horizon: context.horizon || null, due_date: context.due_date || null, type: itemType },
@@ -301,9 +302,9 @@ export default function AspirationsPage() {
       invalidateCache()
     } catch (err) {
       showToast(err.message || 'Scoring failed', 'error')
-      setScorePanelId(null)
+      setOpenPsmartPanel(null)
     } finally {
-      setScoringId(null)
+      setPsmartScoring(prev => { const s = new Set(prev); s.delete(itemId); return s })
     }
   }
 
@@ -394,7 +395,7 @@ export default function AspirationsPage() {
   }
 
   function renderScorePanel(item, itemType) {
-    const isLoading = scoringId === item.id
+    const isLoading = psmartScoring.has(item.id)
     const fb = item.psmart_feedback
     if (!isLoading && !fb) return null
     const RATING_COLOR = { strong: '#22c55e', partial: '#d97706', weak: '#dc2626' }
@@ -429,7 +430,7 @@ export default function AspirationsPage() {
                   style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-faint)', border: '1px solid var(--content-border)', cursor: isLoading ? 'wait' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
                   Re-score
                 </button>
-                <button onClick={() => setScorePanelId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><X size={14} /></button>
+                <button onClick={() => setOpenPsmartPanel(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><X size={14} /></button>
               </div>
             </div>
             {fb.overall_note && (
@@ -590,7 +591,7 @@ export default function AspirationsPage() {
                     {anchor && <div title={anchor.name} style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>}
                     {showProg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: progColor, flexShrink: 0 }}>{prog}%</span>}
                     {m.psmart_score != null && (
-                      <span onClick={() => setScorePanelId(scorePanelId === m.id ? null : m.id)}
+                      <span onClick={() => setOpenPsmartPanel(openPsmartPanel === 'ms-' + m.id ? null : 'ms-' + m.id)}
                         title="PSMART score — click to view"
                         style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 5px', borderRadius: 8, background: psmartScoreColor(m.psmart_score) + '22', color: psmartScoreColor(m.psmart_score), cursor: 'pointer', flexShrink: 0, fontWeight: 600 }}>
                         {m.psmart_score}/10
@@ -604,9 +605,9 @@ export default function AspirationsPage() {
                     )}
                     <div className="ms-actions flex items-center gap-1" style={{ flexShrink: 0 }}>
                       <button onClick={() => scoreItem('milestone', m.id, m.text, { horizon: m.horizon, due_date: m.due_date })}
-                        disabled={scoringId === m.id}
+                        disabled={psmartScoring.has(m.id)}
                         title={m.psmart_score != null ? 'Re-score with PSMART' : 'Score with PSMART'}
-                        style={{ background: 'none', border: 'none', cursor: scoringId === m.id ? 'wait' : 'pointer', padding: 2, color: m.psmart_score != null ? psmartScoreColor(m.psmart_score) : 'var(--ink-faint)', display: 'flex', opacity: scoringId === m.id ? 0.5 : 1 }}>
+                        style={{ background: 'none', border: 'none', cursor: psmartScoring.has(m.id) ? 'wait' : 'pointer', padding: 2, color: m.psmart_score != null ? psmartScoreColor(m.psmart_score) : 'var(--ink-faint)', display: 'flex', opacity: psmartScoring.has(m.id) ? 0.5 : 1 }}>
                         <Sparkles size={12} />
                       </button>
                       <button onClick={() => openEditMs(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Pencil size={12} /></button>
@@ -618,7 +619,7 @@ export default function AspirationsPage() {
               </div>
               {isEditing && renderMsForm()}
               {isTaskLinkable && openTaskPanel === m.id && renderTaskPanel(m)}
-              {scorePanelId === m.id && renderScorePanel(m, 'milestone')}
+              {openPsmartPanel === 'ms-' + m.id && renderScorePanel(m, 'milestone')}
               {(isExp || hasAddChild) && nextH && renderTree(aspirationId, m.id, nextH)}
             </div>
           )
@@ -813,7 +814,7 @@ export default function AspirationsPage() {
                 )}
                 {isSharedAsp && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7' }}>shared</span>}
                 {a.psmart_score != null && (
-                  <span onClick={e => { e.stopPropagation(); setScorePanelId(scorePanelId === a.id ? null : a.id) }}
+                  <span onClick={e => { e.stopPropagation(); setOpenPsmartPanel(openPsmartPanel === 'asp-' + a.id ? null : 'asp-' + a.id) }}
                     title="PSMART score — click to view"
                     style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 7px', borderRadius: 8, background: psmartScoreColor(a.psmart_score) + '22', color: psmartScoreColor(a.psmart_score), cursor: 'pointer', flexShrink: 0, fontWeight: 600 }}>
                     {a.psmart_score}/10
@@ -823,9 +824,9 @@ export default function AspirationsPage() {
                 {!isSharedAsp && <button onClick={e => { e.stopPropagation(); setDeletingAspId(a.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Trash2 size={13} /></button>}
                 {!isSharedAsp && (
                   <button onClick={e => { e.stopPropagation(); scoreItem('aspiration', a.id, a.text, { due_date: a.end_date }) }}
-                    disabled={scoringId === a.id}
+                    disabled={psmartScoring.has(a.id)}
                     title={a.psmart_score != null ? 'Re-score with PSMART' : 'Score with PSMART'}
-                    style={{ background: 'none', border: 'none', cursor: scoringId === a.id ? 'wait' : 'pointer', padding: 3, color: a.psmart_score != null ? psmartScoreColor(a.psmart_score) : 'var(--ink-faint)', display: 'flex', opacity: scoringId === a.id ? 0.5 : 1 }}>
+                    style={{ background: 'none', border: 'none', cursor: psmartScoring.has(a.id) ? 'wait' : 'pointer', padding: 3, color: a.psmart_score != null ? psmartScoreColor(a.psmart_score) : 'var(--ink-faint)', display: 'flex', opacity: psmartScoring.has(a.id) ? 0.5 : 1 }}>
                     <Sparkles size={13} />
                   </button>
                 )}
@@ -836,7 +837,7 @@ export default function AspirationsPage() {
               </div>
             </div>
 
-            {scorePanelId === a.id && (
+            {openPsmartPanel === 'asp-' + a.id && (
               <div style={{ padding: '0 18px 10px' }}>{renderScorePanel(a, 'aspiration')}</div>
             )}
             {(isExpanded || journeyAspirationId === a.id) && (
