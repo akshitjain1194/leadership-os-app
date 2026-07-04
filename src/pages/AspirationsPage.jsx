@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { showToast } from '../components/Toast'
 import { getAreaColor } from '../lib/areaUtils'
 import { useUserProfile } from '../contexts/UserProfileContext'
-import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X, GitBranch } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Target, X, GitBranch, Sparkles } from 'lucide-react'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CHILD_H = { Annual: 'SixMonth', SixMonth: 'Monthly', Monthly: 'Weekly' }
 const HORIZON_BADGE = {
@@ -19,6 +19,10 @@ const PLACEHOLDER = {
   SixMonth: 'What does this six-month period deliver?',
   Monthly: 'What gets done this month?',
   Weekly: 'What happens this week?',
+}
+
+function psmartScoreColor(s) {
+  return s >= 8 ? '#22c55e' : s >= 5 ? '#d97706' : '#dc2626'
 }
 
 function getInitials(name) {
@@ -98,6 +102,8 @@ export default function AspirationsPage() {
   const [deletingMsId, setDeletingMsId] = useState(null)
   const [openTaskPanel, setOpenTaskPanel] = useState(null)
   const [taskSearch, setTaskSearch] = useState('')
+  const [scoringId, setScoringId] = useState(null)
+  const [scorePanelId, setScorePanelId] = useState(null)
   const [taskPanelTasks, setTaskPanelTasks] = useState([])
   const [areasPanel, setAreasPanel] = useState(false)
   const [areaInput, setAreaInput] = useState('')
@@ -274,6 +280,33 @@ export default function AspirationsPage() {
     else { showToast('Task unlinked', 'success'); invalidateCache(); await refetchTasks() }
   }
 
+  async function scoreItem(itemType, itemId, text, context = {}) {
+    setScoringId(itemId)
+    setScorePanelId(itemId)
+    try {
+      const { data, error } = await supabase.functions.invoke('score-psmart', {
+        body: { text, horizon: context.horizon || null, due_date: context.due_date || null, type: itemType },
+      })
+      if (error) throw new Error(error.message || 'Scoring failed')
+      if (data?.error) throw new Error(data.error)
+      const table = itemType === 'aspiration' ? 'aspirations' : 'milestones'
+      await supabase.from(table).update({
+        psmart_score: data.score,
+        psmart_feedback: data,
+        psmart_scored_at: new Date().toISOString(),
+      }).eq('id', itemId).eq('user_id', user.id)
+      const patch = { psmart_score: data.score, psmart_feedback: data, psmart_scored_at: new Date().toISOString() }
+      if (itemType === 'aspiration') setAspirations(prev => prev.map(a => a.id === itemId ? { ...a, ...patch } : a))
+      else setMilestones(prev => prev.map(m => m.id === itemId ? { ...m, ...patch } : m))
+      invalidateCache()
+    } catch (err) {
+      showToast(err.message || 'Scoring failed', 'error')
+      setScorePanelId(null)
+    } finally {
+      setScoringId(null)
+    }
+  }
+
   function toggleAspExpand(id) { setExpandedAsps(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleMsExpand(id) { setExpandedMs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
   function toggleAreaCollapse(id) { setCollapsedAreas(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s }) }
@@ -356,6 +389,74 @@ export default function AspirationsPage() {
           </button>
           <button onClick={() => setMsForm(null)} style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-soft)', border: '1.5px solid var(--content-border)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px' }}>Cancel</button>
         </div>
+      </div>
+    )
+  }
+
+  function renderScorePanel(item, itemType) {
+    const isLoading = scoringId === item.id
+    const fb = item.psmart_feedback
+    if (!isLoading && !fb) return null
+    const RATING_COLOR = { strong: '#22c55e', partial: '#d97706', weak: '#dc2626' }
+    const DIMS = [
+      ['Performance', 'performance'],
+      ['Specific', 'specific'],
+      ['Measurable', 'measurable'],
+      ['Achievable', 'achievable'],
+      ['Relevant', 'relevant'],
+      ['Time-bound', 'time_bound'],
+    ]
+    const context = itemType === 'aspiration'
+      ? { due_date: item.end_date }
+      : { horizon: item.horizon, due_date: item.due_date }
+    const sc = fb ? psmartScoreColor(fb.score) : 'var(--ink-faint)'
+    return (
+      <div style={{ background: 'var(--content-bg)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-md)', padding: '14px 16px', margin: '4px 0' }}>
+        {isLoading && !fb ? (
+          <div style={{ fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>Scoring with Gemini…</div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+              <div className="flex items-center gap-3">
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)' }}>PSMART</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '22px', fontWeight: 700, color: sc, lineHeight: 1 }}>
+                  {fb.score}<span style={{ fontSize: '13px', fontWeight: 400, color: 'var(--ink-faint)' }}>/10</span>
+                </span>
+                {isLoading && <span style={{ fontSize: '11px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>Re-scoring…</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => scoreItem(itemType, item.id, item.text, context)} disabled={isLoading}
+                  style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--ink-faint)', border: '1px solid var(--content-border)', cursor: isLoading ? 'wait' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                  Re-score
+                </button>
+                <button onClick={() => setScorePanelId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><X size={14} /></button>
+              </div>
+            </div>
+            {fb.overall_note && (
+              <p style={{ fontSize: '13px', color: 'var(--ink-soft)', marginBottom: 12, lineHeight: 1.5 }}>{fb.overall_note}</p>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: fb.suggested_rewrite ? 14 : 0 }}>
+              {DIMS.map(([label, key]) => {
+                const dim = fb.dimensions?.[key]
+                if (!dim) return null
+                const rc = RATING_COLOR[dim.rating] || 'var(--ink-faint)'
+                return (
+                  <div key={key} className="flex items-start gap-2">
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: rc, flexShrink: 0, marginTop: 5 }} />
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', whiteSpace: 'nowrap', width: 88, flexShrink: 0, paddingTop: 1 }}>{label}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--ink)', lineHeight: 1.5 }}>{dim.note}</span>
+                  </div>
+                )
+              })}
+            </div>
+            {fb.suggested_rewrite && (
+              <div style={{ background: '#f0f9f4', border: '1px solid #b8e8cc', borderRadius: 'var(--radius-sm)', padding: '10px 12px' }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.8px', color: '#2d6a4f', marginBottom: 5 }}>Suggested rewrite</div>
+                <p style={{ fontSize: '13px', color: 'var(--ink)', lineHeight: 1.55, margin: 0, fontStyle: 'italic' }}>{fb.suggested_rewrite}</p>
+              </div>
+            )}
+          </>
+        )}
       </div>
     )
   }
@@ -488,6 +589,13 @@ export default function AspirationsPage() {
                     <span onClick={isTaskLinkable ? () => { const next = openTaskPanel === m.id ? null : m.id; setOpenTaskPanel(next); setTaskSearch(''); if (next) fetchTaskPanelTasks() } : undefined} style={{ flex: 1, fontSize: '13px', fontFamily: 'var(--font-sans)', color: isDone ? 'var(--ink-faint)' : 'var(--ink)', cursor: isTaskLinkable ? 'pointer' : 'default', lineHeight: 1.4, textDecoration: isDone ? 'line-through' : 'none', opacity: isDone ? 0.65 : 1 }}>{m.text}</span>
                     {anchor && <div title={anchor.name} style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-coral)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{getInitials(anchor.name)}</div>}
                     {showProg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: progColor, flexShrink: 0 }}>{prog}%</span>}
+                    {m.psmart_score != null && (
+                      <span onClick={() => setScorePanelId(scorePanelId === m.id ? null : m.id)}
+                        title="PSMART score — click to view"
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', padding: '1px 5px', borderRadius: 8, background: psmartScoreColor(m.psmart_score) + '22', color: psmartScoreColor(m.psmart_score), cursor: 'pointer', flexShrink: 0, fontWeight: 600 }}>
+                        {m.psmart_score}/10
+                      </span>
+                    )}
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                     {isTaskLinkable && linkedTasks.length > 0 && (
                       <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: linkedDone === linkedTasks.length ? 'var(--accent-green-light)' : 'var(--content-bg)', border: '1px solid var(--content-border)', color: linkedDone === linkedTasks.length ? 'var(--accent-green)' : 'var(--ink-faint)', flexShrink: 0 }}>
@@ -495,6 +603,12 @@ export default function AspirationsPage() {
                       </span>
                     )}
                     <div className="ms-actions flex items-center gap-1" style={{ flexShrink: 0 }}>
+                      <button onClick={() => scoreItem('milestone', m.id, m.text, { horizon: m.horizon, due_date: m.due_date })}
+                        disabled={scoringId === m.id}
+                        title={m.psmart_score != null ? 'Re-score with PSMART' : 'Score with PSMART'}
+                        style={{ background: 'none', border: 'none', cursor: scoringId === m.id ? 'wait' : 'pointer', padding: 2, color: m.psmart_score != null ? psmartScoreColor(m.psmart_score) : 'var(--ink-faint)', display: 'flex', opacity: scoringId === m.id ? 0.5 : 1 }}>
+                        <Sparkles size={12} />
+                      </button>
                       <button onClick={() => openEditMs(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Pencil size={12} /></button>
                       {nextH && <button onClick={() => openAddMs(m.aspiration_id, m.id, nextH)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Plus size={12} /></button>}
                       <button onClick={() => setDeletingMsId(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--ink-faint)' }}><Trash2 size={12} /></button>
@@ -504,6 +618,7 @@ export default function AspirationsPage() {
               </div>
               {isEditing && renderMsForm()}
               {isTaskLinkable && openTaskPanel === m.id && renderTaskPanel(m)}
+              {scorePanelId === m.id && renderScorePanel(m, 'milestone')}
               {(isExp || hasAddChild) && nextH && renderTree(aspirationId, m.id, nextH)}
             </div>
           )
@@ -697,8 +812,23 @@ export default function AspirationsPage() {
                   </div>
                 )}
                 {isSharedAsp && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7' }}>shared</span>}
+                {a.psmart_score != null && (
+                  <span onClick={e => { e.stopPropagation(); setScorePanelId(scorePanelId === a.id ? null : a.id) }}
+                    title="PSMART score — click to view"
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 7px', borderRadius: 8, background: psmartScoreColor(a.psmart_score) + '22', color: psmartScoreColor(a.psmart_score), cursor: 'pointer', flexShrink: 0, fontWeight: 600 }}>
+                    {a.psmart_score}/10
+                  </span>
+                )}
                 {!isSharedAsp && <button onClick={e => { e.stopPropagation(); openEditAsp(a) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Pencil size={13} /></button>}
                 {!isSharedAsp && <button onClick={e => { e.stopPropagation(); setDeletingAspId(a.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-faint)' }}><Trash2 size={13} /></button>}
+                {!isSharedAsp && (
+                  <button onClick={e => { e.stopPropagation(); scoreItem('aspiration', a.id, a.text, { due_date: a.end_date }) }}
+                    disabled={scoringId === a.id}
+                    title={a.psmart_score != null ? 'Re-score with PSMART' : 'Score with PSMART'}
+                    style={{ background: 'none', border: 'none', cursor: scoringId === a.id ? 'wait' : 'pointer', padding: 3, color: a.psmart_score != null ? psmartScoreColor(a.psmart_score) : 'var(--ink-faint)', display: 'flex', opacity: scoringId === a.id ? 0.5 : 1 }}>
+                    <Sparkles size={13} />
+                  </button>
+                )}
                 <button onClick={e => { e.stopPropagation(); setJourneyAspirationId(journeyAspirationId === a.id ? null : a.id) }} className="flex items-center gap-1" style={{ padding: '2px 8px', borderRadius: 'var(--radius-sm)', background: journeyAspirationId === a.id ? 'var(--accent-coral)' : 'transparent', color: journeyAspirationId === a.id ? 'white' : 'var(--ink-faint)', border: `1px solid ${journeyAspirationId === a.id ? 'var(--accent-coral)' : 'var(--content-border)'}`, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
                   <GitBranch size={12} /> Journey
                 </button>
@@ -706,6 +836,9 @@ export default function AspirationsPage() {
               </div>
             </div>
 
+            {scorePanelId === a.id && (
+              <div style={{ padding: '0 18px 10px' }}>{renderScorePanel(a, 'aspiration')}</div>
+            )}
             {(isExpanded || journeyAspirationId === a.id) && (
               journeyAspirationId === a.id ? renderJourney(a) : (
               <div style={{ borderTop: '1px solid var(--content-border)', padding: '10px 0' }}>
