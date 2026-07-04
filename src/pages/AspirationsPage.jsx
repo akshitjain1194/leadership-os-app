@@ -931,9 +931,7 @@ export default function AspirationsPage() {
               </div>
             </div>
 
-            {openPsmartPanel === 'asp-' + a.id && (
-              <div style={{ padding: '0 18px 10px' }}>{renderScorePanel(a, 'aspiration')}</div>
-            )}
+            {renderPsmartPanel('asp', a)}
             {(isExpanded || journeyAspirationId === a.id) && (
               journeyAspirationId === a.id ? renderJourney(a) : (
               <div style={{ borderTop: '1px solid var(--content-border)', padding: '10px 0' }}>
