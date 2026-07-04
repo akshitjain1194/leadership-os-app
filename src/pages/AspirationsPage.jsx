@@ -906,6 +906,7 @@ export default function AspirationsPage() {
                   </div>
                 )}
                 {isSharedAsp && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7' }}>shared</span>}
+                {!isSharedAsp && renderPsmartBadge('asp', a)}
                 {a.psmart_score != null && (
                   <span onClick={e => { e.stopPropagation(); setOpenPsmartPanel(openPsmartPanel === 'asp-' + a.id ? null : 'asp-' + a.id) }}
                     title="PSMART score — click to view"
