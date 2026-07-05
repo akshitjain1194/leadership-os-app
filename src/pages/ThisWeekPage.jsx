@@ -420,32 +420,40 @@ export default function ThisWeekPage() {
         {/* Shared badge */}
         {isShared && <span title={sharedTooltip} style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 5px', borderRadius: 8, background: 'var(--accent-purple-light)', color: '#7b5ea7', flexShrink: 0 }}>shared</span>}
 
-        {/* Due date */}
-        {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: due.color, fontWeight: due.bold ? 600 : 400, flexShrink: 0 }}>{due.text}</span>}
-
-        {/* Rollover count */}
-        {task.rollover_count > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', flexShrink: 0 }}>&#x21BB;&nbsp;{task.rollover_count}</span>}
-
         {/* Owner badge — only on Delegated/Awaited */}
         {cluster.showOwner && (() => { const n = getOwnerName(task, people); return n ? (
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '2px 8px', borderRadius: 20, background: 'var(--content-bg)', border: '1px solid var(--content-border)', color: 'var(--ink-soft)', flexShrink: 0 }}>{n}</span>
         ) : null })()}
 
-        {/* Milestone link indicator */}
-        {task.milestone_id ? (
-          <div title="Linked to milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch(''); closeEditPanel() }}
-            style={{ width: 14, height: 14, borderRadius: '50%', background: '#2d6a4f', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-            <Check size={8} color="white" strokeWidth={3} />
+        {/* Metadata grid: [due date] [rollover] [milestone] [star] */}
+        <div style={{ display: 'grid', gridTemplateColumns: '56px 30px 20px 20px', alignItems: 'center', flexShrink: 0 }}>
+          {/* Due date */}
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: due ? due.color : 'transparent', fontWeight: due?.bold ? 600 : 400 }}>
+            {due ? due.text : ''}
+          </span>
+          {/* Rollover count */}
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)' }}>
+            {task.rollover_count > 0 ? `↻ ${task.rollover_count}` : ''}
+          </span>
+          {/* Milestone link indicator */}
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {task.milestone_id ? (
+              <div title="Linked to milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch(''); closeEditPanel() }}
+                style={{ width: 14, height: 14, borderRadius: '50%', background: '#2d6a4f', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <Check size={8} color="white" strokeWidth={3} />
+              </div>
+            ) : (
+              <div title="Not linked to any milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch(''); closeEditPanel() }}
+                style={{ width: 14, height: 14, borderRadius: '50%', border: '1px dashed var(--content-border)', background: 'transparent', cursor: 'pointer' }} />
+            )}
           </div>
-        ) : (
-          <div title="Not linked to any milestone" onClick={() => { setMsPickerTaskId(msPickerTaskId === task.id ? null : task.id); setMsPickerSearch(''); closeEditPanel() }}
-            style={{ width: 14, height: 14, borderRadius: '50%', border: '1px dashed var(--content-border)', background: 'transparent', cursor: 'pointer', flexShrink: 0 }} />
-        )}
-
-        {/* Star */}
-        <button onClick={() => toggleStar(task)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, display: 'flex' }}>
-          <Star size={16} fill={task.starred ? '#e07a5f' : 'none'} color={task.starred ? '#e07a5f' : 'var(--ink-faint)'} />
-        </button>
+          {/* Star */}
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <button onClick={() => toggleStar(task)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+              <Star size={16} fill={task.starred ? '#e07a5f' : 'none'} color={task.starred ? '#e07a5f' : 'var(--ink-faint)'} />
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
