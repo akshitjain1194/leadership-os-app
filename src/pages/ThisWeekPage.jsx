@@ -85,7 +85,7 @@ export default function ThisWeekPage() {
     const showSkeleton = !cachedData
     if (showSkeleton) setLoading(true)
     const [tR, mR, pR] = await Promise.all([
-      supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('done', false).order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id, rollover_count').eq('done', false).order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('milestones').select('id, text, aspiration_id, horizon, parent_milestone_id, aspirations(text)').eq('user_id', user.id).in('horizon', ['Weekly', 'Monthly']),
       supabase.from('people').select('id, name').order('name'),
     ])
@@ -98,7 +98,7 @@ export default function ThisWeekPage() {
   function invalidateCache() { cachedData = null; cacheTime = null }
 
   async function refetchTasks() {
-    const { data } = await supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id').eq('done', false).order('due_date', { ascending: true, nullsFirst: false })
+    const { data } = await supabase.from('tasks').select('id, user_id, task, done, due_date, owner, owner_id, quadrant, starred, milestone_id, rollover_count').eq('done', false).order('due_date', { ascending: true, nullsFirst: false })
     if (data) { setTasks(data); if (cachedData) { cachedData = { ...cachedData, tasks: data }; cacheTime = Date.now() } }
   }
 
@@ -422,6 +422,9 @@ export default function ThisWeekPage() {
 
         {/* Due date */}
         {due && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: due.color, fontWeight: due.bold ? 600 : 400, flexShrink: 0 }}>{due.text}</span>}
+
+        {/* Rollover count */}
+        {task.rollover_count > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-faint)', flexShrink: 0 }}>&#x21BB;&nbsp;{task.rollover_count}</span>}
 
         {/* Owner badge — only on Delegated/Awaited */}
         {cluster.showOwner && (() => { const n = getOwnerName(task, people); return n ? (
