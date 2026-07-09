@@ -8,6 +8,7 @@ import DashboardPage    from './pages/DashboardPage'
 import PeoplePage       from './pages/PeoplePage'
 import AspirationsPage  from './pages/AspirationsPage'
 import WeeklyFocusPage  from './pages/WeeklyFocusPage'
+import TeamTrackerPage  from './pages/TeamTrackerPage'
 
 export function buildRouter(user) {
   return createBrowserRouter([
@@ -23,6 +24,7 @@ export function buildRouter(user) {
         { path: 'dashboard',             element: <DashboardPage /> },
         { path: 'strategic/people',      element: <PeoplePage /> },
         { path: 'strategic/weekly-focus', element: <WeeklyFocusPage /> },
+        { path: 'team-tracker', element: <TeamTrackerPage /> },
         { path: '*',                     element: <ComingSoon /> },
       ],
     },
