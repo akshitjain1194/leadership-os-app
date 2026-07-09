@@ -96,7 +96,7 @@ export default function CapturePage() {
     try {
       const selectedMs = selectedMilestoneId ? weeklyMilestones.find(m => m.id === selectedMilestoneId) : null
       const effectiveOwnerId = ownerId || selectedMs?.anchor_person_id || ''
-      const effectiveDate = dateManuallySet ? date : (selectedMs?.due_date || date)
+      const effectiveDate = date
 
       if (!effectiveOwnerId) {
         const { error } = await supabase.from('ideas').insert({ user_id: user.id, text: text.trim(), status: 'Active' })
@@ -256,7 +256,10 @@ export default function CapturePage() {
                           const isOvd = m.due_date && m.due_date < todayStr
                           return (
                             <div key={m.id}
-                              onClick={() => { setSelectedMilestoneId(m.id); setMilestoneSearch(m.text); setMilestoneDropdownOpen(false) }}
+                              onClick={() => {
+                                setSelectedMilestoneId(m.id); setMilestoneSearch(m.text); setMilestoneDropdownOpen(false)
+                                if (!dateManuallySet && m.due_date) setDate(m.due_date)
+                              }}
                               style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 10, transition: 'background 100ms' }}
                               onMouseEnter={e => (e.currentTarget.style.background = 'var(--content-bg)')}
                               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
