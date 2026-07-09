@@ -15,6 +15,13 @@ const QUAD_BADGE = {
   Awaited:     { bg: '#deeaff', color: '#185fa5' },
 }
 
+const HORIZON_BADGE = {
+  Annual:   { bg: 'var(--accent-green-light)', color: 'var(--accent-green)' },
+  SixMonth: { bg: '#deeaff', color: '#185fa5' },
+  Monthly:  { bg: 'var(--accent-gold-light)', color: 'var(--accent-gold)' },
+  Weekly:   { bg: 'var(--accent-coral-light)', color: 'var(--accent-coral)' },
+}
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 function fmtDate(s) {
   if (!s) return null
@@ -76,52 +83,56 @@ export default function TeamTrackerPage() {
     return m
   }, [areas])
 
-  const milestoneById = useMemo(() => {
+  const personById = useMemo(() => {
     const m = {}
-    milestones.forEach(ms => { m[ms.id] = ms })
+    people.forEach(p => { m[p.id] = p })
     return m
-  }, [milestones])
+  }, [people])
 
   const view = useMemo(() => {
     if (!selectedPersonId) return null
 
-    const anchoredMilestones = milestones
-      .filter(m => m.anchor_person_id === selectedPersonId)
-      .sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'))
+    const anchoredIds = new Set(milestones.filter(m => m.anchor_person_id === selectedPersonId).map(m => m.id))
+    const ownedTasks = tasks.filter(t => t.owner_id === selectedPersonId)
+    const taskLinkedIds = new Set(ownedTasks.filter(t => t.milestone_id).map(t => t.milestone_id))
+    const relevantIds = new Set([...anchoredIds, ...taskLinkedIds])
+    const relevantMilestones = milestones.filter(m => relevantIds.has(m.id))
 
-    const ownedTasks = tasks
-      .filter(t => t.owner_id === selectedPersonId)
+    const unlinkedTasks = ownedTasks
+      .filter(t => !t.milestone_id)
       .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1) || (a.due_date || '9999').localeCompare(b.due_date || '9999'))
 
-    const aspMap = new Map()
-    anchoredMilestones.forEach(m => {
+    const byAspiration = new Map()
+    relevantMilestones.forEach(m => {
       if (!m.aspiration_id) return
-      const entry = aspMap.get(m.aspiration_id) || { reasons: new Set() }
-      entry.reasons.add('milestone anchor')
-      aspMap.set(m.aspiration_id, entry)
-    })
-    ownedTasks.forEach(t => {
-      if (!t.milestone_id) return
-      const ms = milestoneById[t.milestone_id]
-      if (!ms?.aspiration_id) return
-      const entry = aspMap.get(ms.aspiration_id) || { reasons: new Set() }
-      entry.reasons.add('task owner')
-      aspMap.set(ms.aspiration_id, entry)
+      const asp = aspirationById[m.aspiration_id]
+      if (!asp) return
+      const tasksForThis = ownedTasks
+        .filter(t => t.milestone_id === m.id)
+        .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1))
+      const entry = byAspiration.get(asp.id) || { aspiration: asp, milestones: [] }
+      entry.milestones.push({ milestone: m, tasks: tasksForThis })
+      byAspiration.set(asp.id, entry)
     })
 
-    const taggedAspirations = Array.from(aspMap.entries())
-      .map(([aspId, { reasons }]) => ({ aspiration: aspirationById[aspId], reasons: Array.from(reasons) }))
-      .filter(x => x.aspiration)
+    const aspirationGroups = Array.from(byAspiration.values())
+      .map(g => ({ ...g, milestones: g.milestones.sort((a, b) => (a.milestone.due_date || '9999').localeCompare(b.milestone.due_date || '9999')) }))
       .sort((a, b) => a.aspiration.text.localeCompare(b.aspiration.text))
 
-    return { anchoredMilestones, ownedTasks, taggedAspirations }
-  }, [selectedPersonId, milestones, tasks, milestoneById, aspirationById])
+    return {
+      aspirationGroups,
+      unlinkedTasks,
+      aspirationCount: aspirationGroups.length,
+      milestoneCount: relevantMilestones.length,
+      taskCount: ownedTasks.length,
+    }
+  }, [selectedPersonId, milestones, tasks, aspirationById])
 
   return (
     <div className="page-pad flex flex-col gap-7">
       <div>
         <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '28px', color: 'var(--ink)', marginBottom: '4px' }}>Team Tracker</h1>
-        <p style={{ fontSize: '13px', color: 'var(--ink-faint)' }}>See everything one person is tagged in — aspirations, milestones, and tasks.</p>
+        <p style={{ fontSize: '13px', color: 'var(--ink-faint)' }}>See what one person is actually working on — aspiration through to task.</p>
       </div>
 
       <div style={{ position: 'relative', maxWidth: 320 }}>
@@ -156,7 +167,7 @@ export default function TeamTrackerPage() {
       {!loading && !selectedPersonId && (
         <div className="flex flex-col items-center gap-3 py-16 px-6 text-center" style={{ borderRadius: 'var(--radius-lg)', background: 'var(--content-bg-card)', border: '1.5px dashed var(--content-border-strong)' }}>
           <Users size={36} style={{ color: 'var(--ink-faint)', opacity: 0.5 }} />
-          <p style={{ fontSize: '14px', color: 'var(--ink-soft)' }}>Select a team member above to see what they're tagged in.</p>
+          <p style={{ fontSize: '14px', color: 'var(--ink-soft)' }}>Select a team member above to see what they're working on.</p>
         </div>
       )}
 
@@ -164,58 +175,89 @@ export default function TeamTrackerPage() {
         <>
           <div className="flex items-center gap-2">
             <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '3px 10px', borderRadius: 20, background: 'var(--accent-coral-light)', color: 'var(--accent-coral)' }}>
-              {view.taggedAspirations.length} aspiration{view.taggedAspirations.length !== 1 ? 's' : ''}
+              {view.aspirationCount} aspiration{view.aspirationCount !== 1 ? 's' : ''}
             </span>
             <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '3px 10px', borderRadius: 20, background: 'var(--accent-green-light)', color: 'var(--accent-green)' }}>
-              {view.anchoredMilestones.length} milestone{view.anchoredMilestones.length !== 1 ? 's' : ''}
+              {view.milestoneCount} milestone{view.milestoneCount !== 1 ? 's' : ''}
             </span>
             <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', padding: '3px 10px', borderRadius: 20, background: 'var(--accent-gold-light)', color: 'var(--accent-gold)' }}>
-              {view.ownedTasks.length} task{view.ownedTasks.length !== 1 ? 's' : ''}
+              {view.taskCount} task{view.taskCount !== 1 ? 's' : ''}
             </span>
           </div>
 
-          <div>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>Aspirations</div>
-            <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-              {view.taggedAspirations.length === 0 ? (
-                <p style={{ padding: '14px', fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No aspirations tagged for {selectedPerson?.name}</p>
-              ) : view.taggedAspirations.map(({ aspiration, reasons }, i) => (
-                <div key={aspiration.id} className="flex items-center justify-between gap-3" style={{ padding: '10px 14px', borderBottom: i < view.taggedAspirations.length - 1 ? '1px solid var(--content-border)' : 'none' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{aspiration.text}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--ink-faint)', marginTop: 1 }}>{areaById[aspiration.area_id]?.name || 'No area'}</div>
+          {view.aspirationGroups.length === 0 ? (
+            <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '16px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No aspirations, milestones, or linked tasks for {selectedPerson?.name} yet.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">
+              {view.aspirationGroups.map(({ aspiration, milestones: msGroup }) => (
+                <div key={aspiration.id} style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
+                  <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent-coral)', flexShrink: 0 }} />
+                    <span style={{ fontFamily: 'var(--font-sans)', fontSize: '15px', fontWeight: 600, color: 'var(--ink)' }}>{aspiration.text}</span>
                   </div>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)', flexShrink: 0, whiteSpace: 'nowrap' }}>via {reasons.join(', ')}</span>
+                  <div style={{ fontSize: '11px', color: 'var(--ink-faint)', marginBottom: 12, marginLeft: 16 }}>{areaById[aspiration.area_id]?.name || 'No area'}</div>
+
+                  <div style={{ borderLeft: '2px dashed var(--content-border)', marginLeft: 4, paddingLeft: 18 }}>
+                    {msGroup.map(({ milestone: m, tasks: msTasks }, mi) => {
+                      const hb = HORIZON_BADGE[m.horizon]
+                      const anchorPerson = m.anchor_person_id ? personById[m.anchor_person_id] : null
+                      const anchoredToOther = anchorPerson && anchorPerson.id !== selectedPersonId
+                      return (
+                        <div key={m.id} style={{ marginBottom: mi < msGroup.length - 1 ? 16 : 0 }}>
+                          <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: 6 }}>
+                            {hb && <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 8, background: hb.bg, color: hb.color, fontWeight: 600 }}>{m.horizon}</span>}
+                            <span style={{ fontSize: '13px', fontWeight: 500, color: m.status === 'Done' ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: m.status === 'Done' ? 'line-through' : 'none' }}>{m.text}</span>
+                            <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: m.status === 'Done' ? 'var(--accent-green)' : 'var(--ink-faint)', marginLeft: 'auto', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              {m.status === 'Done' ? 'Done' : (fmtDate(m.due_date) || 'no date')}
+                            </span>
+                          </div>
+                          {anchoredToOther && (
+                            <div style={{ fontSize: '10.5px', color: '#7b5ea7', marginBottom: 6, fontStyle: 'italic' }}>
+                              Anchored by {anchorPerson.name}
+                            </div>
+                          )}
+                          {msTasks.length > 0 ? (
+                            <div style={{ borderLeft: '2px solid var(--accent-green-light)', marginLeft: 2, paddingLeft: 10 }}>
+                              {msTasks.map(t => {
+                                const qb = QUAD_BADGE[t.quadrant]
+                                return (
+                                  <div key={t.id} className="flex items-center gap-2" style={{ padding: '4px 0' }}>
+                                    <span style={{ width: 13, height: 13, borderRadius: 3, flexShrink: 0, border: t.done ? 'none' : '1.5px solid var(--content-border)', background: t.done ? 'var(--accent-green)' : 'transparent' }} />
+                                    <span style={{ fontSize: '12.5px', flex: 1, color: t.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: t.done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.task}</span>
+                                    {t.done ? (
+                                      <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)', flexShrink: 0 }}>Done</span>
+                                    ) : qb ? (
+                                      <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 8, background: qb.bg, color: qb.color, flexShrink: 0 }}>{t.quadrant}</span>
+                                    ) : null}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <p style={{ fontSize: '11.5px', color: 'var(--ink-faint)', fontStyle: 'italic', marginLeft: 12 }}>No tasks logged yet</p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
+          )}
 
           <div>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>Milestones anchored to {selectedPerson?.name}</div>
-            <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-              {view.anchoredMilestones.length === 0 ? (
-                <p style={{ padding: '14px', fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No milestones anchored to {selectedPerson?.name}</p>
-              ) : view.anchoredMilestones.map((m, i) => (
-                <div key={m.id} className="flex items-center justify-between gap-3" style={{ padding: '9px 14px', borderBottom: i < view.anchoredMilestones.length - 1 ? '1px solid var(--content-border)' : 'none' }}>
-                  <span style={{ fontSize: '13px', color: m.status === 'Done' ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: m.status === 'Done' ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{m.text}</span>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: m.status === 'Done' ? 'var(--accent-green)' : 'var(--ink-faint)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    {m.status === 'Done' ? 'Done' : `${m.horizon} · ${fmtDate(m.due_date) || 'no date'}`}
-                  </span>
-                </div>
-              ))}
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>
+              Not linked to a milestone ({view.unlinkedTasks.length})
             </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--ink-faint)', marginBottom: 8 }}>Tasks owned by {selectedPerson?.name}</div>
             <div style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-              {view.ownedTasks.length === 0 ? (
-                <p style={{ padding: '14px', fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>No tasks owned by {selectedPerson?.name}</p>
-              ) : view.ownedTasks.map((t, i) => {
+              {view.unlinkedTasks.length === 0 ? (
+                <p style={{ padding: '14px', fontSize: '13px', color: 'var(--ink-faint)', fontStyle: 'italic' }}>Every task for {selectedPerson?.name} is linked to a milestone.</p>
+              ) : view.unlinkedTasks.map((t, i) => {
                 const qb = QUAD_BADGE[t.quadrant]
                 return (
-                  <div key={t.id} className="flex items-center gap-2" style={{ padding: '9px 14px', borderBottom: i < view.ownedTasks.length - 1 ? '1px solid var(--content-border)' : 'none' }}>
+                  <div key={t.id} className="flex items-center gap-2" style={{ padding: '9px 14px', borderBottom: i < view.unlinkedTasks.length - 1 ? '1px solid var(--content-border)' : 'none' }}>
                     <span style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, border: t.done ? 'none' : '1.5px solid var(--content-border)', background: t.done ? 'var(--accent-green)' : 'transparent' }} />
                     <span style={{ fontSize: '13px', flex: 1, color: t.done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: t.done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.task}</span>
                     {t.done ? (
