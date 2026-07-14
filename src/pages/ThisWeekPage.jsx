@@ -478,8 +478,8 @@ export default function ThisWeekPage() {
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.13)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}>
                 <span style={{ color: '#e07a5f', fontSize: '12px', flexShrink: 0 }}>★</span>
-                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>
-                  {t.task.length > 28 ? t.task.slice(0, 28) + '…' : t.task}
+                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'white', whiteSpace: 'normal', wordBreak: 'break-word', maxWidth: 220 }}>
+                  {t.task}
                 </span>
                 <button onClick={() => toggleStar(t)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'rgba(255,255,255,0.4)', display: 'flex', flexShrink: 0, lineHeight: 1 }}
