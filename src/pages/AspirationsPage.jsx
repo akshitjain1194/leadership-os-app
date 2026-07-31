@@ -492,7 +492,12 @@ export default function AspirationsPage() {
 
   function renderTree(aspirationId, parentId, horizon) {
     const key = `${aspirationId}|${parentId || ''}|${horizon}`
-    const items = msIndex.byParent[key] || []
+    const items = (msIndex.byParent[key] || []).slice().sort((a, b) => {
+      if (!a.due_date && !b.due_date) return 0
+      if (!a.due_date) return 1
+      if (!b.due_date) return -1
+      return b.due_date.localeCompare(a.due_date)
+    })
     const nextH = CHILD_H[horizon]
     const indent = INDENT[horizon] || 0
     const showAddHere = msForm && !msForm.id && msForm.aspirationId === aspirationId &&
