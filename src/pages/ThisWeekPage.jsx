@@ -345,7 +345,7 @@ export default function ThisWeekPage() {
     const isProminent = cluster.prominent
 
     return (
-      <div className={isProminent ? 'md:col-span-2' : ''} key={cluster.key}
+      <div key={cluster.key}
         style={{ background: 'var(--content-bg-card)', border: '1px solid var(--content-border)', borderLeft: `3px solid ${cluster.color}`, borderRadius: 'var(--radius-lg)', overflow: 'hidden', ...(isProminent ? { borderTop: `2px solid ${cluster.color}` } : {}) }}>
         {/* Header */}
         <div className="flex items-center justify-between"
@@ -500,7 +500,7 @@ export default function ThisWeekPage() {
       </div>
 
       {/* ── Cluster grid ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 16 }}>
+      <div className="grid grid-cols-1" style={{ gap: 16 }}>
         {CLUSTERS.map(c => renderCluster(c))}
       </div>
 
